@@ -6,7 +6,7 @@ from panoptic.models.results import Group, ActionResult
 from panoptic.utils import group_by_sha1
 from panoptic.core.plugin.plugin_project_interface import PluginProjectInterface
 
-from compute.similarity import get_similar_images_from_text
+from .compute.similarity import get_similar_images_from_text
 from .compute import reload_tree, get_similar_images, make_clusters
 from .compute_vector_task import ComputeVectorTask
 
@@ -25,7 +25,7 @@ class PanopticML(APlugin):
         self.project.on_instance_import(self.compute_image_vector)
         self.add_action_easy(self.find_images, ['similar'])
         self.add_action_easy(self.compute_clusters, ['group'])
-        self.add_action_easy(self.search_by_text, ['execute'])
+        # self.add_action_easy(self.search_by_text, ['execute'])
 
     async def start(self):
         await super().start()
@@ -78,5 +78,9 @@ class PanopticML(APlugin):
         return ActionResult(instances=res)
 
     async def search_by_text(self, context: ActionContext, text: str):
-        res = await get_similar_images_from_text(text)
-        return ActionResult(instances=res)
+        instances = get_similar_images_from_text(text)
+        index = {r['sha1']: r['dist'] for r in instances}
+        res_sha1s = list(index.keys())
+        res_scores = [index[sha1] for sha1 in res_sha1s]
+        res = Group(sha1s=res_sha1s, scores=res_scores)
+        return ActionResult(groups=[res])

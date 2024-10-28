@@ -1,5 +1,5 @@
 import faiss
-from scipy import hmean
+from scipy.stats import hmean
 import numpy as np
 from sklearn.metrics import silhouette_score
 from panoptic.models import ComputedValue, Vector
@@ -26,7 +26,7 @@ def make_clusters(vectors: list[Vector],  **kwargs) -> (list[list[str]], list[in
     return sorted_clusters, sorted(res_distances)
 
 
-def _make_clusters_faiss(vectors, nb_clusters=6) -> (np.ndarray, np.ndarray):
+def _make_clusters_faiss(vectors, nb_clusters=6, **kwargs) -> (np.ndarray, np.ndarray):
     def _make_single_kmean(vectors, nb_clusters):
         kmean = faiss.Kmeans(vectors.shape[1], nb_clusters, niter=20, verbose=False)
         kmean.train(vectors)
