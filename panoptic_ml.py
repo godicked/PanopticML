@@ -54,9 +54,16 @@ class PanopticML(APlugin):
 
         vectors = await self.project.get_vectors(source=self.name, vector_type='clip', sha1s=sha1s)
         clusters, distances = make_clusters(vectors, method="kmeans", nb_clusters=nb_clusters)
-
-        groups = [Group(ids=[i.id for sha1 in cluster for i in sha1_to_instance[sha1]], score=distance) for
-                  cluster, distance in zip(clusters, distances)]
+        groups = []
+        # TODO: simplify once plugins can return sha1 instead of ids
+        for cluster, distance in zip(clusters, distances):
+            group = Group(score=distance)
+            instances = []
+            for sha1 in cluster:
+                instances.extend(sha1_to_instance[sha1])
+            # sort instances inside cluster by average_hash
+            group.ids = [i.id for i in sorted(instances, key=lambda inst: inst.ahash)]
+            groups.append(group)
         for i, g in enumerate(groups):
             g.name = f"Cluster {i}"
 

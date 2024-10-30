@@ -15,12 +15,15 @@ def make_clusters(vectors: list[Vector],  **kwargs) -> (list[list[str]], list[in
     clusters, distances = _make_clusters_faiss(vectors, **kwargs)
 
     for cluster in list(set(clusters)):
-        sha1_clusters = sha1[clusters == cluster]
-        # sort by average_hash
-        # sorted_cluster = [sha1 for _, sha1 in sorted(zip(ahashs_clusters, sha1_clusters))]
+        sha1_cluster = sha1[clusters == cluster]
+        current_cluster_distances = distances[clusters == cluster]
+        # sort current cluster by the distances
+        # sorted_indices = np.argsort(current_cluster_distances)
+        # sorted_cluster = sha1_cluster[sorted_indices]
+
         if distances is not None:
-            res_distances.append(hmean(distances[clusters == cluster]))
-        res_clusters.append(list(sha1_clusters))
+            res_distances.append(hmean(current_cluster_distances))
+        res_clusters.append(list(sha1_cluster))
     # sort clusters by distances
     sorted_clusters = [cluster for _, cluster in sorted(zip(res_distances, res_clusters))]
     return sorted_clusters, sorted(res_distances)
@@ -33,7 +36,7 @@ def _make_clusters_faiss(vectors, nb_clusters=6, **kwargs) -> (np.ndarray, np.nd
         return kmean.index.search(vectors, 1)
 
     vectors = np.asarray(vectors)
-    if nb_clusters == 0:
+    if nb_clusters == -1:
         k_silhouettes = []
         for k in range(3, 30):
             distances, indices = _make_single_kmean(vectors, k)
