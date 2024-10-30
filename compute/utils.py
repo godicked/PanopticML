@@ -1,7 +1,7 @@
 import os
 import pickle
 
-from compute.transformers import get_transformer
+from .transformers import get_transformer
 
 TRANSFORMER = get_transformer('clip')
 def load_similarity_tree(path: str):
