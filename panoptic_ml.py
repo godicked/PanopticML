@@ -11,16 +11,15 @@ from .compute import reload_tree, get_similar_images, make_clusters
 from .compute_vector_task import ComputeVectorTask
 
 
-
 class PanopticML(APlugin):
     """
     Default Machine Learning plugin for Panoptic
     Uses CLIP to generate vectors and FAISS for clustering / similarity functions
     """
 
-    def __init__(self, project: PluginProjectInterface, plugin_path: str):
-        super().__init__(name='PanopticML', project=project, plugin_path=plugin_path)
-        reload_tree(self.project.base_path)
+    def __init__(self, project: PluginProjectInterface, plugin_path: str, name: str):
+        super().__init__(name=name, project=project, plugin_path=plugin_path)
+        reload_tree(self.data_path)
 
         self.project.on_instance_import(self.compute_image_vector)
         self.add_action_easy(self.find_images, ['similar'])
@@ -32,13 +31,13 @@ class PanopticML(APlugin):
         vectors = await self.project.get_vectors(self.name, 'clip')
 
         # TODO: handle this properly with an import hook
-        if not os.path.exists(os.path.join(self.project.base_path, 'tree_faiss.pkl')) and len(vectors) > 0:
+        if not os.path.exists(os.path.join(self.data_path, 'tree_faiss.pkl')) and len(vectors) > 0:
             from .compute import compute_faiss_index
-            await compute_faiss_index(self.project.base_path, self.project, self.name, 'clip')
-            reload_tree(self.project.base_path)
+            await compute_faiss_index(self.data_path, self.project, self.name, 'clip')
+            reload_tree(self.data_path)
 
     async def compute_image_vector(self, instance: Instance):
-        task = ComputeVectorTask(self.project, self.name, 'clip', instance)
+        task = ComputeVectorTask(self.project, self.name, 'clip', instance, self.data_path)
         self.project.add_task(task)
 
     async def compute_clusters(self, context: ActionContext, nb_clusters: int = 10):
@@ -48,6 +47,7 @@ class PanopticML(APlugin):
         """
         instances = await self.project.get_instances(context.instance_ids)
         sha1_to_instance = group_by_sha1(instances)
+        sha1_to_ahash = {i.sha1: i.ahash for i in instances}
         sha1s = list(sha1_to_instance.keys())
         if not sha1s:
             return None
@@ -55,14 +55,9 @@ class PanopticML(APlugin):
         vectors = await self.project.get_vectors(source=self.name, vector_type='clip', sha1s=sha1s)
         clusters, distances = make_clusters(vectors, method="kmeans", nb_clusters=nb_clusters)
         groups = []
-        # TODO: simplify once plugins can return sha1 instead of ids
         for cluster, distance in zip(clusters, distances):
             group = Group(score=distance)
-            instances = []
-            for sha1 in cluster:
-                instances.extend(sha1_to_instance[sha1])
-            # sort instances inside cluster by average_hash
-            group.ids = [i.id for i in sorted(instances, key=lambda inst: inst.ahash)]
+            group.sha1s = sorted(cluster, key=lambda sha1: sha1_to_ahash[sha1])
             groups.append(group)
         for i, g in enumerate(groups):
             g.name = f"Cluster {i}"
@@ -90,4 +85,5 @@ class PanopticML(APlugin):
         res_sha1s = list(index.keys())
         res_scores = [index[sha1] for sha1 in res_sha1s]
         res = Group(sha1s=res_sha1s, scores=res_scores)
-        return ActionResult(groups=[res])
+        res.name = "Text Search: " + text
+        return ActionResult(instances=res)

@@ -15,13 +15,14 @@ logger = logging.getLogger('PanopticML:VectorTask')
 
 
 class ComputeVectorTask(Task):
-    def __init__(self, project: PluginProjectInterface, source: str, type_: str, instance: Instance):
+    def __init__(self, project: PluginProjectInterface, source: str, type_: str, instance: Instance, data_path: str):
         super().__init__()
         self.project = project
         self.source = source
         self.type = type_
         self.instance = instance
         self.name = 'Clip Vectors'
+        self.data_path = data_path
 
     async def run(self):
         # instance_id = self.instance.id
@@ -45,7 +46,7 @@ class ComputeVectorTask(Task):
         return res
 
     async def run_if_last(self):
-        await compute_faiss_index(self.project.base_path, self.project, self.source, self.type)
+        await compute_faiss_index(self.data_path, self.project, self.source, self.type)
         logging.info('computed faiss index')
 
     @staticmethod

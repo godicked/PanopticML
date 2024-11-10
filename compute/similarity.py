@@ -55,13 +55,14 @@ async def compute_faiss_index(path: str, db: PluginProjectInterface, source: str
 
 
 def get_similar_images_from_text(input_text: str):
+    global SIMILARITY_TREE
     if TRANSFORMER.can_handle_text:
         vec = TRANSFORMER.to_text_vector(input_text)
         return SIMILARITY_TREE.query(vec)
 
 
 def get_similar_images(vectors: list[np.ndarray]):
-    print(SIMILARITY_TREE)
+    global SIMILARITY_TREE
     if not SIMILARITY_TREE:
         raise ValueError("Cannot compute image similarity since KDTree was not computed yet")
     vector = np.mean(vectors, axis=0)

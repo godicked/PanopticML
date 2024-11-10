@@ -44,7 +44,6 @@ class CLIPTransformer:
         return embedding_as_np[0]
 
     def to_text_vector(self, text: str) -> np.ndarray:
-        print(text)
         inputs = self.tokenizer(text=text, return_tensors="pt")
         text_embeddings = self.model.get_text_features(**inputs)
         # convert the embeddings to numpy array
