@@ -63,11 +63,13 @@ def get_text_vectors(texts: [str]) -> list[np.array]:
 
 
 def get_similar_images_from_text(input_text: str):
+    global SIMILARITY_TREE
     vectors = get_text_vectors([input_text])
     return SIMILARITY_TREE.query(vectors[0])
 
 
 def get_similar_images(vectors: list[np.ndarray]):
+    global SIMILARITY_TREE
     if not SIMILARITY_TREE:
         raise ValueError("Cannot compute image similarity since KDTree was not computed yet")
     vector = np.mean(vectors, axis=0)
