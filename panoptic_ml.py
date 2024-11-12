@@ -91,3 +91,34 @@ class PanopticML(APlugin):
         res_scores = [index[sha1] for sha1 in res_sha1s]
         res = Group(sha1s=res_sha1s, scores=res_scores)
         return ActionResult(groups=[res])
+
+    # async def cluster_by_tags(self, context: ActionContext, tags: PropertyId):
+    #     instances = await self.project.get_instances(context.instance_ids)
+    #     sha1_to_instance = group_by_sha1(instances)
+    #     sha1s = list(sha1_to_instance.keys())
+    #     if not sha1s:
+    #         return None
+    #
+    #     text_vectors = get_text_vectors(tags)
+    #     pano_vectors = await self.project.get_vectors(source=self.name, vector_type='clip', sha1s=sha1s)
+    #     vectors, sha1s = zip(*[(i.data, i.sha1) for i in pano_vectors])
+    #     sha1s_array = np.asarray(sha1s)
+    #     text_vectors_reshaped = np.squeeze(text_vectors, axis=1)
+    #
+    #     images_vectors_norm = vectors / np.linalg.norm(vectors, axis=1, keepdims=True)
+    #     text_vectors_norm = text_vectors_reshaped / np.linalg.norm(text_vectors_reshaped, axis=1, keepdims=True)
+    #
+    #     matrix = cosine_similarity(images_vectors_norm, text_vectors_norm)
+    #     closest_text_indices = np.argmax(matrix, axis=1)
+    #     closest_text_probs = np.max(matrix, axis=1)
+    #
+    #     clusters = []
+    #     distances = []
+    #
+    #     for text_index in list(set(closest_text_indices)):
+    #         cluster = sha1s_array[closest_text_indices == text_index]
+    #         distance = 100 - np.mean(closest_text_probs[closest_text_indices == text_index]) * 100
+    #         clusters.append(cluster)
+    #         distances.append(distances)
+
+
