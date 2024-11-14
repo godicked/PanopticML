@@ -38,10 +38,31 @@ def _make_clusters_faiss(vectors, nb_clusters=6, **kwargs) -> (np.ndarray, np.nd
     vectors = np.asarray(vectors)
     if nb_clusters == -1:
         k_silhouettes = []
-        for k in range(3, 30):
+        max_clusters = min(len(vectors), 100)
+        for k in custom_range(3, max_clusters + 1, [10, 25, 50, 75], increments=[2, 3, 4, 5]):
             distances, indices = _make_single_kmean(vectors, k)
             indices = indices.flatten()
             k_silhouettes.append(silhouette_score(vectors, indices))
-        nb_clusters = int(np.argmax(k_silhouettes)) + 3
+        nb_clusters = int(np.argmax(k_silhouettes))
     distances, indices = _make_single_kmean(vectors, nb_clusters)
     return indices.flatten(), distances.flatten()
+
+
+def custom_range(min_i, max_i, steps, increments):
+    """
+    Generate a range of values from min_i to max_i with a variable increment for each step
+    :param min_i: first value
+    :param max_i: last value
+    :param steps: values for which increment should change
+    :param increments: increments values
+    :return:
+    """
+    i = min_i
+    current_step = 0
+    current_incr = 1
+    while i < max_i:
+        yield i
+        if i >= steps[current_step] and current_step < len(steps) - 1:
+            current_incr = increments[current_step]
+            current_step += 1
+        i += current_incr

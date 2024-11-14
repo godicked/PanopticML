@@ -7,7 +7,6 @@ import faiss
 import numpy as np
 from panoptic.models import ComputedValue, Vector
 from panoptic.core.plugin.plugin_project_interface import PluginProjectInterface
-
 from .utils import load_similarity_tree, TRANSFORMER
 
 
@@ -24,16 +23,18 @@ class SimilarityFaissWithLabel:
         # create the faiss index based on this post: https://anttihavanko.medium.com/building-image-search-with-openai-clip-5a1deaa7a6e2
         vector_size = vectors.shape[1]
         index = faiss.IndexFlatIP(vector_size)
+        # faiss.ParameterSpace().set_index_parameter(index, 'nprobe', 100)
         self.tree = index
         self.tree.add(np.asarray(vectors))
 
     def query(self, image: np.ndarray, k=99999):
         # by normalizing it allows to search by cosine distance instead of inner product, need to do text / image sim
         faiss.normalize_L2(image)
+        real_k = min(k, len(self.image_labels))
         vector = image.reshape(1, -1)
-        dist, ind = self.tree.search(vector, k)
+        dist, ind = self.tree.search(vector, real_k)
         indices = [x for x in ind[0]]
-        distances = [x if x <= 1.0 else 0 for x in dist[0]]  # avoid some strange overflow behavior
+        distances = [x for x in dist[0]]  # avoid some strange overflow behavior
         return [{'sha1': self.image_labels[i], 'dist': float('%.2f' % (distances[index]))} for index, i in
                 enumerate(indices)]
 
@@ -58,7 +59,7 @@ def get_text_vectors(texts: [str]) -> list[np.array]:
     vectors = []
     if TRANSFORMER.can_handle_text:
         for text in texts:
-            vectors.append(TRANSFORMER.transform(text))
+            vectors.append(TRANSFORMER.to_text_vector(text))
     return np.asarray(vectors)
 
 

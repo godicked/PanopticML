@@ -1,15 +1,18 @@
 import os.path
 
+from sklearn.metrics.pairwise import cosine_similarity
+
 from panoptic.core.plugin.plugin import APlugin
-from panoptic.models import Instance, ActionContext
+from panoptic.models import Instance, ActionContext, PropertyId
 from panoptic.models.results import Group, ActionResult
 from panoptic.utils import group_by_sha1
 from panoptic.core.plugin.plugin_project_interface import PluginProjectInterface
 
-from .compute.similarity import get_similar_images_from_text
+from .compute.similarity import get_similar_images_from_text, get_text_vectors
 from .compute import reload_tree, get_similar_images, make_clusters
 from .compute_vector_task import ComputeVectorTask
 
+import numpy as np
 
 class PanopticML(APlugin):
     """
@@ -24,7 +27,8 @@ class PanopticML(APlugin):
         self.project.on_instance_import(self.compute_image_vector)
         self.add_action_easy(self.find_images, ['similar'])
         self.add_action_easy(self.compute_clusters, ['group'])
-        # self.add_action_easy(self.search_by_text, ['execute'])
+        self.add_action_easy(self.cluster_by_tags, ['group'])
+        self.add_action_easy(self.search_by_text, ['execute'])
 
     async def start(self):
         await super().start()
@@ -65,6 +69,13 @@ class PanopticML(APlugin):
         return ActionResult(groups=groups)
 
     async def find_images(self, context: ActionContext):
+        """
+        :return {
+          min: 0. ; images are considered highly dissimilar
+          max: 1. ; images are considered identical
+          metric: similarity ; Cosine similarity, compute the cosine similarity between the images vectors. See: https://en.wikipedia.org/wiki/Cosine_similarity for more.
+        }
+        """
         instances = await self.project.get_instances(context.instance_ids)
         sha1s = [i.sha1 for i in instances]
         ignore_sha1s = set(sha1s)
@@ -80,41 +91,60 @@ class PanopticML(APlugin):
         return ActionResult(instances=res)
 
     async def search_by_text(self, context: ActionContext, text: str):
-        instances = get_similar_images_from_text(text)
-        index = {r['sha1']: r['dist'] for r in instances}
+        context_instances = await self.project.get_instances(context.instance_ids)
+        context_sha1s = [i.sha1 for i in context_instances]
+
+        text_instances = get_similar_images_from_text(text)
+
+        # filter out images if they are not in the current context
+        filtered_instances = [inst for inst in text_instances if inst['sha1'] in context_sha1s]
+
+        index = {r['sha1']: r['dist'] for r in filtered_instances}
         res_sha1s = list(index.keys())
         res_scores = [index[sha1] for sha1 in res_sha1s]
+        print(res_scores)
         res = Group(sha1s=res_sha1s, scores=res_scores)
         res.name = "Text Search: " + text
+        # rename instances ?
         return ActionResult(instances=res)
 
-    # async def cluster_by_tags(self, context: ActionContext, tags: PropertyId):
-    #     instances = await self.project.get_instances(context.instance_ids)
-    #     sha1_to_instance = group_by_sha1(instances)
-    #     sha1s = list(sha1_to_instance.keys())
-    #     if not sha1s:
-    #         return None
-    #
-    #     text_vectors = get_text_vectors(tags)
-    #     pano_vectors = await self.project.get_vectors(source=self.name, vector_type='clip', sha1s=sha1s)
-    #     vectors, sha1s = zip(*[(i.data, i.sha1) for i in pano_vectors])
-    #     sha1s_array = np.asarray(sha1s)
-    #     text_vectors_reshaped = np.squeeze(text_vectors, axis=1)
-    #
-    #     images_vectors_norm = vectors / np.linalg.norm(vectors, axis=1, keepdims=True)
-    #     text_vectors_norm = text_vectors_reshaped / np.linalg.norm(text_vectors_reshaped, axis=1, keepdims=True)
-    #
-    #     matrix = cosine_similarity(images_vectors_norm, text_vectors_norm)
-    #     closest_text_indices = np.argmax(matrix, axis=1)
-    #     closest_text_probs = np.max(matrix, axis=1)
-    #
-    #     clusters = []
-    #     distances = []
-    #
-    #     for text_index in list(set(closest_text_indices)):
-    #         cluster = sha1s_array[closest_text_indices == text_index]
-    #         distance = 100 - np.mean(closest_text_probs[closest_text_indices == text_index]) * 100
-    #         clusters.append(cluster)
-    #         distances.append(distances)
+    async def cluster_by_tags(self, context: ActionContext, tags: PropertyId):
+        instances = await self.project.get_instances(context.instance_ids)
+        sha1_to_instance = group_by_sha1(instances)
+        sha1s = list(sha1_to_instance.keys())
+        if not sha1s:
+            return None
+        # TODO: get tags text from the PropertyId
+        tags_text = [t.value for t in await self.project.get_tags(property_ids=[tags])]
+        text_vectors = get_text_vectors(tags_text)
+        pano_vectors = await self.project.get_vectors(source=self.name, vector_type='clip', sha1s=sha1s)
+        vectors, sha1s = zip(*[(i.data, i.sha1) for i in pano_vectors])
+        sha1s_array = np.asarray(sha1s)
+        text_vectors_reshaped = np.squeeze(text_vectors, axis=1)
 
+        images_vectors_norm = vectors / np.linalg.norm(vectors, axis=1, keepdims=True)
+        text_vectors_norm = text_vectors_reshaped / np.linalg.norm(text_vectors_reshaped, axis=1, keepdims=True)
+
+        matrix = cosine_similarity(images_vectors_norm, text_vectors_norm)
+        closest_text_indices = np.argmax(matrix, axis=1)
+        closest_text_probs = np.max(matrix, axis=1)
+
+        clusters = []
+        distances = []
+
+        for text_index in list(set(closest_text_indices)):
+            cluster = sha1s_array[closest_text_indices == text_index]
+            distance = np.mean(closest_text_probs[closest_text_indices == text_index]) * 100
+            clusters.append(cluster)
+            distances.append(distance)
+
+        groups = []
+        for cluster, distance in zip(clusters, distances):
+            group = Group(score=distance)
+            group.sha1s = list(cluster)
+            groups.append(group)
+        for i, g in enumerate(groups):
+            g.name = f"Cluster {tags_text[i]}"
+
+        return ActionResult(groups=groups)
 
