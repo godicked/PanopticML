@@ -127,15 +127,18 @@ class PanopticML(APlugin):
 
         matrix = cosine_similarity(images_vectors_norm, text_vectors_norm)
         closest_text_indices = np.argmax(matrix, axis=1)
-        closest_text_probs = np.max(matrix, axis=1)
+        similarities = np.max(matrix, axis=1)
 
         clusters = []
         distances = []
 
         for text_index in list(set(closest_text_indices)):
             cluster = sha1s_array[closest_text_indices == text_index]
-            distance = np.mean(closest_text_probs[closest_text_indices == text_index]) * 100
-            clusters.append(cluster)
+            cluster_sim = similarities[closest_text_indices == text_index]
+            distance = (1 - np.mean(cluster_sim)) * 100
+            sorting_index = cluster_sim.argsort()
+            sorted_cluster = cluster[sorting_index[::-1]]
+            clusters.append(sorted_cluster)
             distances.append(distance)
 
         groups = []
