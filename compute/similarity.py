@@ -42,9 +42,9 @@ class SimilarityFaissWithLabel:
 SIMILARITY_TREE: SimilarityFaissWithLabel | None = None
 
 
-def create_similarity_tree_faiss(path: str, images: list[Vector]):
+def create_similarity_tree_faiss(path: str, images: list[Vector], name: str = "tree_faiss.pkl"):
     tree = SimilarityFaissWithLabel(images)
-    with open(os.path.join(path, 'tree_faiss.pkl'), 'wb') as f:
+    with open(os.path.join(path, name), 'wb') as f:
         pickle.dump(tree, f)
     global SIMILARITY_TREE
     SIMILARITY_TREE = tree
@@ -52,7 +52,11 @@ def create_similarity_tree_faiss(path: str, images: list[Vector]):
 
 async def compute_faiss_index(path: str, db: PluginProjectInterface, source: str, type_: str):
     vectors = await db.get_vectors(source, type_)
-    create_similarity_tree_faiss(path, vectors)
+    if type_ == "clip_greyscale":
+        name = "tree_faiss_greyscale.pkl"
+    else:
+        name = "tree_faiss.pkl"
+    create_similarity_tree_faiss(path, vectors, name)
 
 
 def get_text_vectors(texts: [str]) -> list[np.array]:

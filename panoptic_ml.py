@@ -1,5 +1,6 @@
 import os.path
 
+from pydantic import BaseModel
 from sklearn.metrics.pairwise import cosine_similarity
 
 from panoptic.core.plugin.plugin import APlugin
@@ -14,6 +15,13 @@ from .compute_vector_task import ComputeVectorTask
 
 import numpy as np
 
+class PluginParams(BaseModel):
+    """
+    @greyscale: if this is checked, vectors can be recomputed but this time images will be converted to greyscale before
+    """
+    greyscale: bool = False
+
+
 class PanopticML(APlugin):
     """
     Default Machine Learning plugin for Panoptic
@@ -22,9 +30,11 @@ class PanopticML(APlugin):
 
     def __init__(self, project: PluginProjectInterface, plugin_path: str, name: str):
         super().__init__(name=name, project=project, plugin_path=plugin_path)
+        self.params: PluginParams = PluginParams()
         reload_tree(self.data_path)
 
         self.project.on_instance_import(self.compute_image_vector)
+        self.project.on_instance_import(self.compute_image_vector_greyscale)
         self.add_action_easy(self.find_images, ['similar'])
         self.add_action_easy(self.compute_clusters, ['group'])
         self.add_action_easy(self.cluster_by_tags, ['group'])
@@ -33,6 +43,7 @@ class PanopticML(APlugin):
     async def start(self):
         await super().start()
         vectors = await self.project.get_vectors(self.name, 'clip')
+        vectors_greyscale = await self.project.get_vectors(self.name, 'clip_greyscale')
 
         # TODO: handle this properly with an import hook
         if not os.path.exists(os.path.join(self.data_path, 'tree_faiss.pkl')) and len(vectors) > 0:
@@ -40,11 +51,23 @@ class PanopticML(APlugin):
             await compute_faiss_index(self.data_path, self.project, self.name, 'clip')
             reload_tree(self.data_path)
 
+        if not os.path.exists(os.path.join(self.data_path, 'tree_faiss_greyscale.pkl')) and len(vectors_greyscale) > 0 and self.params.greyscale:
+            from .compute import compute_faiss_index
+            await compute_faiss_index(self.data_path, self.project, self.name, 'clip_greyscale')
+            reload_tree(self.data_path)
+
     async def compute_image_vector(self, instance: Instance):
         task = ComputeVectorTask(self.project, self.name, 'clip', instance, self.data_path)
         self.project.add_task(task)
 
-    async def compute_clusters(self, context: ActionContext, nb_clusters: int = 10):
+    async def compute_image_vector_greyscale(self, instance: Instance):
+        if self.params.greyscale:
+            task = ComputeVectorTask(self.project, self.name, 'clip_greyscale', instance, self.data_path, greyscale=True)
+            self.project.add_task(task)
+        else:
+            pass
+
+    async def compute_clusters(self, context: ActionContext, nb_clusters: int = 10, ignore_color: bool = False):
         """
         Computes images clusters with Faiss Kmeans
         @nb_clusters: requested number of clusters
@@ -56,7 +79,10 @@ class PanopticML(APlugin):
         if not sha1s:
             return None
 
-        vectors = await self.project.get_vectors(source=self.name, vector_type='clip', sha1s=sha1s)
+        if not ignore_color:
+            vectors = await self.project.get_vectors(source=self.name, vector_type='clip', sha1s=sha1s)
+        else:
+            vectors = await self.project.get_vectors(source=self.name, vector_type='clip_greyscale', sha1s=sha1s)
         clusters, distances = make_clusters(vectors, method="kmeans", nb_clusters=nb_clusters)
         groups = []
         for cluster, distance in zip(clusters, distances):
@@ -102,7 +128,6 @@ class PanopticML(APlugin):
         index = {r['sha1']: r['dist'] for r in filtered_instances}
         res_sha1s = list(index.keys())
         res_scores = [index[sha1] for sha1 in res_sha1s]
-        print(res_scores)
         res = Group(sha1s=res_sha1s, scores=res_scores)
         res.name = "Text Search: " + text
         # rename instances ?

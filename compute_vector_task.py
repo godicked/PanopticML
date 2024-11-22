@@ -15,7 +15,7 @@ logger = logging.getLogger('PanopticML:VectorTask')
 
 
 class ComputeVectorTask(Task):
-    def __init__(self, project: PluginProjectInterface, source: str, type_: str, instance: Instance, data_path: str):
+    def __init__(self, project: PluginProjectInterface, source: str, type_: str, instance: Instance, data_path: str, greyscale: bool = False):
         super().__init__()
         self.project = project
         self.source = source
@@ -23,6 +23,7 @@ class ComputeVectorTask(Task):
         self.instance = instance
         self.name = 'Clip Vectors'
         self.data_path = data_path
+        self.greyscale = greyscale
 
     async def run(self):
         # instance_id = self.instance.id
@@ -37,7 +38,7 @@ class ComputeVectorTask(Task):
             async with aiofiles.open(file, mode='rb') as file:
                 image_data = await file.read()
 
-        vector_data = await self._async(self.compute_image, image_data, self.project.base_path)
+        vector_data = await self._async(self.compute_image, image_data, self.project.base_path, self.greyscale)
         vector = Vector(self.source, self.type, instance.sha1, vector_data)
         res = await self.project.add_vector(vector)
         del vector
@@ -50,9 +51,12 @@ class ComputeVectorTask(Task):
         logging.info('computed faiss index')
 
     @staticmethod
-    def compute_image(image_data: bytes, project_path: str):
+    def compute_image(image_data: bytes, project_path: str, greyscale: bool = False):
         image = Image.open(io.BytesIO(image_data))
-        image = image.convert('RGB')
+        if greyscale:
+            image = image.convert('L')
+        else:
+            image = image.convert('RGBA')
         vector = TRANSFORMER.to_vector(image)
 
         del image
