@@ -1,5 +1,4 @@
-torch==2.0.1;sys_platform == 'darwin'
-torch;sys_platform != 'darwin'
+torch
 faiss-cpu
 scipy
 scikit-learn
