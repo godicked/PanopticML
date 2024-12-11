@@ -5,7 +5,7 @@ from sklearn.metrics import silhouette_score
 from panoptic.models import ComputedValue, Vector
 
 
-def make_clusters(vectors: list[Vector],  **kwargs) -> (list[list[str]], list[int]):
+def make_clusters(vectors: list[Vector], **kwargs) -> (list[list[str]], list[int]):
     res_clusters = []
     res_distances = []
     vectors, sha1 = zip(*[(i.data, i.sha1) for i in vectors])

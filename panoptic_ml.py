@@ -1,25 +1,27 @@
 import os.path
+from typing import Dict
 
+import numpy as np
 from pydantic import BaseModel
 from sklearn.metrics.pairwise import cosine_similarity
 
 from panoptic.core.plugin.plugin import APlugin
-from panoptic.models import Instance, ActionContext, PropertyId
-from panoptic.models.results import Group, ActionResult
-from panoptic.utils import group_by_sha1
 from panoptic.core.plugin.plugin_project_interface import PluginProjectInterface
-
-from .compute.similarity import get_similar_images_from_text, get_text_vectors
-from .compute import reload_tree, get_similar_images, make_clusters
+from panoptic.models import Instance, ActionContext, PropertyId
+from panoptic.models.results import Group, ActionResult, Notif, NotifType
+from panoptic.utils import group_by_sha1
+from .compute import make_clusters
+from .compute.faiss_tree import load_faiss_tree, create_faiss_tree, FaissTree
+from .compute.similarity import get_text_vectors
 from .compute_vector_task import ComputeVectorTask
+from .models import VectorType
 
-import numpy as np
 
 class PluginParams(BaseModel):
     """
     @greyscale: if this is checked, vectors can be recomputed but this time images will be converted to greyscale before
     """
-    greyscale: bool = False
+    similarity_vector: VectorType = VectorType.clip
 
 
 class PanopticML(APlugin):
@@ -31,58 +33,50 @@ class PanopticML(APlugin):
     def __init__(self, project: PluginProjectInterface, plugin_path: str, name: str):
         super().__init__(name=name, project=project, plugin_path=plugin_path)
         self.params: PluginParams = PluginParams()
-        reload_tree(self.data_path)
 
         self.project.on_instance_import(self.compute_image_vector)
-        self.project.on_instance_import(self.compute_image_vector_greyscale)
         self.add_action_easy(self.find_images, ['similar'])
         self.add_action_easy(self.compute_clusters, ['group'])
         self.add_action_easy(self.cluster_by_tags, ['group'])
         self.add_action_easy(self.search_by_text, ['execute'])
+        self.add_action_easy(self.compute_vectors, ['execute'])
+
+        self.trees: Dict[VectorType, FaissTree] = {}
 
     async def start(self):
         await super().start()
-        vectors = await self.project.get_vectors(self.name, 'clip')
-        vectors_greyscale = await self.project.get_vectors(self.name, 'clip_greyscale')
 
-        # TODO: handle this properly with an import hook
-        if not os.path.exists(os.path.join(self.data_path, 'tree_faiss.pkl')) and len(vectors) > 0:
-            from .compute import compute_faiss_index
-            await compute_faiss_index(self.data_path, self.project, self.name, 'clip')
-            reload_tree(self.data_path)
+        [await self.get_tree(t) for t in VectorType]
 
-        if not os.path.exists(os.path.join(self.data_path, 'tree_faiss_greyscale.pkl')) and len(vectors_greyscale) > 0 and self.params.greyscale:
-            from .compute import compute_faiss_index
-            await compute_faiss_index(self.data_path, self.project, self.name, 'clip_greyscale')
-            reload_tree(self.data_path)
+    async def compute_vectors(self, context: ActionContext, vector: VectorType):
+        instances = await self.project.get_instances(ids=context.instance_ids)
+        for i in instances:
+            await self.compute_image_vector(i, vector)
 
-    async def compute_image_vector(self, instance: Instance):
-        task = ComputeVectorTask(self.project, self.name, 'clip', instance, self.data_path)
+        notif = Notif(type=NotifType.INFO,
+                      name="ComputeVector",
+                      message=f"Successfuly started compute of vectors of type {vector.value}")
+        return ActionResult(notifs=[notif])
+
+    async def compute_image_vector(self, instance: Instance, vector: VectorType):
+        task = ComputeVectorTask(self, self.name, vector, instance, self.data_path)
         self.project.add_task(task)
 
-    async def compute_image_vector_greyscale(self, instance: Instance):
-        if self.params.greyscale:
-            task = ComputeVectorTask(self.project, self.name, 'clip_greyscale', instance, self.data_path, greyscale=True)
-            self.project.add_task(task)
-        else:
-            pass
-
-    async def compute_clusters(self, context: ActionContext, nb_clusters: int = 10, ignore_color: bool = False):
-        """
-        Computes images clusters with Faiss Kmeans
-        @nb_clusters: requested number of clusters
-        """
+    async def compute_clusters(self, context: ActionContext, vec_type: VectorType, nb_clusters: int = 10):
         instances = await self.project.get_instances(context.instance_ids)
         sha1_to_instance = group_by_sha1(instances)
         sha1_to_ahash = {i.sha1: i.ahash for i in instances}
         sha1s = list(sha1_to_instance.keys())
-        if not sha1s:
-            return None
 
-        if not ignore_color:
-            vectors = await self.project.get_vectors(source=self.name, vector_type='clip', sha1s=sha1s)
-        else:
-            vectors = await self.project.get_vectors(source=self.name, vector_type='clip_greyscale', sha1s=sha1s)
+        if not sha1s:
+            empty_notif = Notif(NotifType.ERROR, name="NoData", message="No instance found")
+            return ActionResult(notifs=[empty_notif])
+
+        vectors = await self.project.get_vectors(source=self.name, vector_type=vec_type.value, sha1s=sha1s)
+
+        if not vectors:
+            empty_notif = Notif(NotifType.ERROR, name="NoData", message="No vectors found")
+            return ActionResult(notifs=[empty_notif])
         clusters, distances = make_clusters(vectors, method="kmeans", nb_clusters=nb_clusters)
         groups = []
         for cluster, distance in zip(clusters, distances):
@@ -94,7 +88,7 @@ class PanopticML(APlugin):
 
         return ActionResult(groups=groups)
 
-    async def find_images(self, context: ActionContext):
+    async def find_images(self, context: ActionContext, vec_type: VectorType = VectorType.clip):
         """
         :return {
           min: 0. ; images are considered highly dissimilar
@@ -107,7 +101,14 @@ class PanopticML(APlugin):
         ignore_sha1s = set(sha1s)
         vectors = await self.project.get_vectors(source=self.name, vector_type='clip', sha1s=sha1s)
         vector_datas = [x.data for x in vectors]
-        res = get_similar_images(vector_datas)
+
+        tree = await self.get_tree(vec_type)
+        if not tree:
+            notif = Notif(type=NotifType.ERROR, name="NoFaissTree",
+                          message=f"No Faiss tree could be loaded for vec_type {vec_type.value}")
+            return ActionResult(notifs=[notif])
+
+        res = tree.query(vector_datas)
         index = {r['sha1']: r['dist'] for r in res if r['sha1'] not in ignore_sha1s}
 
         res_sha1s = list(index.keys())
@@ -116,11 +117,21 @@ class PanopticML(APlugin):
         res = Group(sha1s=res_sha1s, scores=res_scores)
         return ActionResult(instances=res)
 
-    async def search_by_text(self, context: ActionContext, text: str):
+    async def search_by_text(self, context: ActionContext, vec_type: VectorType = VectorType.clip, text: str = ''):
+        if text == '':
+            notif = Notif(type=NotifType.ERROR, name="EmptySearchText", message="Please give a valid and not empty text search argument")
+            return ActionResult(notifs=[notif])
+
         context_instances = await self.project.get_instances(context.instance_ids)
         context_sha1s = [i.sha1 for i in context_instances]
 
-        text_instances = get_similar_images_from_text(text)
+        tree = await self.get_tree(vec_type)
+        if not tree:
+            notif = Notif(type=NotifType.ERROR, name="NoFaissTree",
+                          message=f"No Faiss tree could be loaded for vec_type {vec_type.value}")
+            return ActionResult(notifs=[notif])
+
+        text_instances = tree.query_texts([text])
 
         # filter out images if they are not in the current context
         filtered_instances = [inst for inst in text_instances if inst['sha1'] in context_sha1s]
@@ -133,7 +144,7 @@ class PanopticML(APlugin):
         # rename instances ?
         return ActionResult(instances=res)
 
-    async def cluster_by_tags(self, context: ActionContext, tags: PropertyId):
+    async def cluster_by_tags(self, context: ActionContext, tags: PropertyId, vec_type: VectorType = VectorType.clip):
         instances = await self.project.get_instances(context.instance_ids)
         sha1_to_instance = group_by_sha1(instances)
         sha1s = list(sha1_to_instance.keys())
@@ -142,7 +153,7 @@ class PanopticML(APlugin):
         # TODO: get tags text from the PropertyId
         tags_text = [t.value for t in await self.project.get_tags(property_ids=[tags])]
         text_vectors = get_text_vectors(tags_text)
-        pano_vectors = await self.project.get_vectors(source=self.name, vector_type='clip', sha1s=sha1s)
+        pano_vectors = await self.project.get_vectors(source=self.name, vector_type=vec_type.value, sha1s=sha1s)
         vectors, sha1s = zip(*[(i.data, i.sha1) for i in pano_vectors])
         sha1s_array = np.asarray(sha1s)
         text_vectors_reshaped = np.squeeze(text_vectors, axis=1)
@@ -176,3 +187,21 @@ class PanopticML(APlugin):
 
         return ActionResult(groups=groups)
 
+    async def get_tree(self, vec_type: VectorType):
+        tree = self.trees.get(vec_type)
+        if tree:
+            return tree
+        tree = load_faiss_tree(self, vec_type)
+        if tree:
+            self.trees[vec_type] = tree
+            return tree
+        tree = await create_faiss_tree(self, vec_type)
+        if tree:
+            self.trees[vec_type] = tree
+            return tree
+
+    async def update_tree(self, vec_type: VectorType):
+        tree = await create_faiss_tree(self, vec_type)
+        self.trees[vec_type] = tree
+        print(f"updated {vec_type.value} faiss tree")
+        return tree
