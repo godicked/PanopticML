@@ -7,8 +7,8 @@ from sklearn.metrics.pairwise import cosine_similarity
 
 from panoptic.core.plugin.plugin import APlugin
 from panoptic.core.plugin.plugin_project_interface import PluginProjectInterface
-from panoptic.models import Instance, ActionContext, PropertyId
-from panoptic.models.results import Group, ActionResult, Notif, NotifType
+from panoptic.models import Instance, ActionContext, PropertyId, FunctionDescription
+from panoptic.models.results import Group, ActionResult, Notif, NotifType, NotifFunction
 from panoptic.utils import group_by_sha1
 from .compute import make_clusters
 from .compute.faiss_tree import load_faiss_tree, create_faiss_tree, FaissTree
@@ -39,7 +39,8 @@ class PanopticML(APlugin):
         self.add_action_easy(self.compute_clusters, ['group'])
         self.add_action_easy(self.cluster_by_tags, ['group'])
         self.add_action_easy(self.search_by_text, ['execute'])
-        self.add_action_easy(self.compute_vectors, ['execute'])
+        self._comp_vec_desc = self.add_action_easy(self.compute_vectors, ['execute'])
+        self._comp_all_vec_desc = self.add_action_easy(self.compute_all_vectors, ['execute'])
 
         self.trees: Dict[VectorType, FaissTree] = {}
 
@@ -48,15 +49,30 @@ class PanopticML(APlugin):
 
         [await self.get_tree(t) for t in VectorType]
 
-    async def compute_vectors(self, context: ActionContext, vector: VectorType):
+    def _get_vector_func_notifs(self, vec_type: VectorType):
+        res = [
+            NotifFunction(self._comp_vec_desc.id,
+                          ActionContext(ui_inputs={"vec_type": vec_type.value}),
+                          message=f"Compute all vectors of type {vec_type.value}"),
+            NotifFunction(self._comp_all_vec_desc.id,
+                          ActionContext(),
+                          message="Compute vectors off all types")
+        ]
+        return res
+
+    async def compute_vectors(self, context: ActionContext, vec_type: VectorType):
         instances = await self.project.get_instances(ids=context.instance_ids)
         for i in instances:
-            await self.compute_image_vector(i, vector)
+            await self.compute_image_vector(i, vec_type)
 
         notif = Notif(type=NotifType.INFO,
                       name="ComputeVector",
-                      message=f"Successfuly started compute of vectors of type {vector.value}")
+                      message=f"Successfuly started compute of vectors of type {vec_type.value}")
         return ActionResult(notifs=[notif])
+
+    async def compute_all_vectors(self, context: ActionContext):
+        res = [await self.compute_vectors(context, t) for t in VectorType]
+        return ActionResult(notifs=[n for r in res for n in r.notifs])
 
     async def compute_image_vector(self, instance: Instance, vector: VectorType):
         task = ComputeVectorTask(self, self.name, vector, instance, self.data_path)
@@ -75,7 +91,12 @@ class PanopticML(APlugin):
         vectors = await self.project.get_vectors(source=self.name, vector_type=vec_type.value, sha1s=sha1s)
 
         if not vectors:
-            empty_notif = Notif(NotifType.ERROR, name="NoData", message="No vectors found")
+            empty_notif = Notif(NotifType.ERROR,
+                                name="NoData",
+                                message=f"""For the clustering function image Vectors are needed.
+                                        No such vectors ({vec_type.value} could be found. 
+                                        Compute the vectors and try again.) """,
+                                functions=self._get_vector_func_notifs(vec_type))
             return ActionResult(notifs=[empty_notif])
         clusters, distances = make_clusters(vectors, method="kmeans", nb_clusters=nb_clusters)
         groups = []
@@ -119,7 +140,8 @@ class PanopticML(APlugin):
 
     async def search_by_text(self, context: ActionContext, vec_type: VectorType = VectorType.clip, text: str = ''):
         if text == '':
-            notif = Notif(type=NotifType.ERROR, name="EmptySearchText", message="Please give a valid and not empty text search argument")
+            notif = Notif(type=NotifType.ERROR, name="EmptySearchText",
+                          message="Please give a valid and not empty text search argument")
             return ActionResult(notifs=[notif])
 
         context_instances = await self.project.get_instances(context.instance_ids)
