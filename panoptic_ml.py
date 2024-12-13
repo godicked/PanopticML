@@ -93,8 +93,8 @@ class PanopticML(APlugin):
         if not vectors:
             empty_notif = Notif(NotifType.ERROR,
                                 name="NoData",
-                                message=f"""For the clustering function image Vectors are needed.
-                                        No such vectors ({vec_type.value} could be found. 
+                                message=f"""For the clustering function image vectors are needed.
+                                        No such vectors ({vec_type.value}) could be found. 
                                         Compute the vectors and try again.) """,
                                 functions=self._get_vector_func_notifs(vec_type))
             return ActionResult(notifs=[empty_notif])
@@ -120,7 +120,17 @@ class PanopticML(APlugin):
         instances = await self.project.get_instances(context.instance_ids)
         sha1s = [i.sha1 for i in instances]
         ignore_sha1s = set(sha1s)
-        vectors = await self.project.get_vectors(source=self.name, vector_type='clip', sha1s=sha1s)
+        vectors = await self.project.get_vectors(source=self.name, vector_type=vec_type.value, sha1s=sha1s)
+
+        if not vectors:
+            return ActionResult(notifs=[Notif(
+                NotifType.ERROR,
+                name="NoData",
+                message=f"""For the similarity function image vectors are needed.
+                            No such vectors ({vec_type.value}) could be found. 
+                            Compute the vectors and try again.) """,
+                functions=self._get_vector_func_notifs(vec_type))])
+
         vector_datas = [x.data for x in vectors]
 
         tree = await self.get_tree(vec_type)
