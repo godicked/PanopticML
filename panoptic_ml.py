@@ -1,4 +1,4 @@
-import os.path
+from random import randrange
 from typing import Dict
 
 import numpy as np
@@ -7,8 +7,8 @@ from sklearn.metrics.pairwise import cosine_similarity
 
 from panoptic.core.plugin.plugin import APlugin
 from panoptic.core.plugin.plugin_project_interface import PluginProjectInterface
-from panoptic.models import Instance, ActionContext, PropertyId, FunctionDescription
-from panoptic.models.results import Group, ActionResult, Notif, NotifType, NotifFunction
+from panoptic.models import Instance, ActionContext, PropertyId
+from panoptic.models.results import Group, ActionResult, Notif, NotifType, NotifFunction, ScoreList, Score
 from panoptic.utils import group_by_sha1
 from .compute import make_clusters
 from .compute.faiss_tree import load_faiss_tree, create_faiss_tree, FaissTree
@@ -101,7 +101,7 @@ class PanopticML(APlugin):
         clusters, distances = make_clusters(vectors, method="kmeans", nb_clusters=nb_clusters)
         groups = []
         for cluster, distance in zip(clusters, distances):
-            group = Group(score=distance)
+            group = Group(score=Score(min=0, max=100, max_is_best=False, value=distance))
             group.sha1s = sorted(cluster, key=lambda sha1: sha1_to_ahash[sha1])
             groups.append(group)
         for i, g in enumerate(groups):
@@ -143,10 +143,12 @@ class PanopticML(APlugin):
         index = {r['sha1']: r['dist'] for r in res if r['sha1'] not in ignore_sha1s}
 
         res_sha1s = list(index.keys())
-        res_scores = [index[sha1] for sha1 in res_sha1s]
+        res_scores = ScoreList(min=0, max=1, values=[index[sha1] for sha1 in res_sha1s],
+                               max_is_best=True,
+                               description="Similarity between 0 and 1. 1 is best")
 
         res = Group(sha1s=res_sha1s, scores=res_scores)
-        return ActionResult(instances=res)
+        return ActionResult(groups=[res])
 
     async def search_by_text(self, context: ActionContext, vec_type: VectorType = VectorType.clip, text: str = ''):
         if text == '':
@@ -171,10 +173,10 @@ class PanopticML(APlugin):
         index = {r['sha1']: r['dist'] for r in filtered_instances}
         res_sha1s = list(index.keys())
         res_scores = [index[sha1] for sha1 in res_sha1s]
-        res = Group(sha1s=res_sha1s, scores=res_scores)
+        scores = ScoreList(min=0, max=1, values=res_scores)
+        res = Group(sha1s=res_sha1s, scores=scores)
         res.name = "Text Search: " + text
-        # rename instances ?
-        return ActionResult(instances=res)
+        return ActionResult(groups=[res])
 
     async def cluster_by_tags(self, context: ActionContext, tags: PropertyId, vec_type: VectorType = VectorType.clip):
         instances = await self.project.get_instances(context.instance_ids)
