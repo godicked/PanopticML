@@ -4,10 +4,9 @@ import pickle
 import faiss
 import numpy as np
 
+from compute.similarity import get_text_vectors
+from ..models import VectorType
 from panoptic.core.plugin.plugin import APlugin
-from panoptic.plugins.MacOCR.mac_ocr import VectorType
-from panoptic.plugins.PanopticML.compute.similarity import get_text_vectors
-from panoptic.plugins.PanopticML.compute.utils import TRANSFORMER
 
 
 class FaissTree:
