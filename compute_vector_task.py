@@ -29,9 +29,9 @@ class ComputeVectorTask(Task):
         self.source = source
         self.type = type_
         self.instance = instance
-        self.name = f'Clip Vectors ({type_})'
+        self.name = f'Clip Vectors ({type_.value})'
         self.data_path = data_path
-        self.key += f"_{type_}"
+        self.key += f"_{type_.value}"
 
     async def run(self):
         instance = self.instance

@@ -1,4 +1,3 @@
-from random import randrange
 from typing import Dict
 
 import numpy as np
@@ -7,7 +6,7 @@ from sklearn.metrics.pairwise import cosine_similarity
 
 from panoptic.core.plugin.plugin import APlugin
 from panoptic.core.plugin.plugin_project_interface import PluginProjectInterface
-from panoptic.models import Instance, ActionContext, PropertyId, PropertyMode, PropertyType
+from panoptic.models import Instance, ActionContext, PropertyId, PropertyType
 from panoptic.models.results import Group, ActionResult, Notif, NotifType, NotifFunction, ScoreList, Score
 from panoptic.utils import group_by_sha1
 from .compute import make_clusters
@@ -22,6 +21,7 @@ class PluginParams(BaseModel):
     @greyscale: if this is checked, vectors can be recomputed but this time images will be converted to greyscale before
     """
     similarity_vector: VectorType = VectorType.clip
+    greyscale: bool = False
 
 
 class PanopticML(APlugin):
@@ -71,8 +71,9 @@ class PanopticML(APlugin):
         return ActionResult(notifs=[notif])
 
     async def compute_image_vectors_on_import(self, instance: Instance):
-        for t in VectorType:
-            await self.compute_image_vector(instance, t)
+        await self.compute_image_vector(instance, VectorType.clip)
+        if self.params.greyscale:
+            await self.compute_image_vector(instance, VectorType.clip_grey)
 
     async def compute_all_vectors(self, context: ActionContext):
         res = [await self.compute_vectors(context, t) for t in VectorType]
