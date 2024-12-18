@@ -7,7 +7,7 @@ from sklearn.metrics.pairwise import cosine_similarity
 
 from panoptic.core.plugin.plugin import APlugin
 from panoptic.core.plugin.plugin_project_interface import PluginProjectInterface
-from panoptic.models import Instance, ActionContext, PropertyId
+from panoptic.models import Instance, ActionContext, PropertyId, PropertyMode, PropertyType
 from panoptic.models.results import Group, ActionResult, Notif, NotifType, NotifFunction, ScoreList, Score
 from panoptic.utils import group_by_sha1
 from .compute import make_clusters
@@ -34,7 +34,7 @@ class PanopticML(APlugin):
         super().__init__(name=name, project=project, plugin_path=plugin_path)
         self.params: PluginParams = PluginParams()
 
-        self.project.on_instance_import(self.compute_image_vector)
+        self.project.on_instance_import(self.compute_image_vectors_on_import)
         self.add_action_easy(self.find_images, ['similar'])
         self.add_action_easy(self.compute_clusters, ['group'])
         self.add_action_easy(self.cluster_by_tags, ['group'])
@@ -69,6 +69,10 @@ class PanopticML(APlugin):
                       name="ComputeVector",
                       message=f"Successfuly started compute of vectors of type {vec_type.value}")
         return ActionResult(notifs=[notif])
+
+    async def compute_image_vectors_on_import(self, instance: Instance):
+        for t in VectorType:
+            await self.compute_image_vector(instance, t)
 
     async def compute_all_vectors(self, context: ActionContext):
         res = [await self.compute_vectors(context, t) for t in VectorType]
@@ -179,6 +183,17 @@ class PanopticML(APlugin):
         return ActionResult(groups=[res])
 
     async def cluster_by_tags(self, context: ActionContext, tags: PropertyId, vec_type: VectorType = VectorType.clip):
+
+        props = await self.project.get_properties(ids=[tags])
+        tag_prop = props[0]
+
+        if tag_prop.type != PropertyType.tag and tag_prop.type != PropertyType.multi_tags:
+            notif = Notif(type=NotifType.ERROR,
+                          name="WrongPropertyType",
+                          message=f"""Property: <{tag_prop.name}> is not of type Tag or MultiTags. This function only
+                                  accepts tag types properties. Please choose another property""")
+            return ActionResult(notifs=[notif])
+
         instances = await self.project.get_instances(context.instance_ids)
         sha1_to_instance = group_by_sha1(instances)
         sha1s = list(sha1_to_instance.keys())
@@ -188,6 +203,16 @@ class PanopticML(APlugin):
         tags_text = [t.value for t in await self.project.get_tags(property_ids=[tags])]
         text_vectors = get_text_vectors(tags_text)
         pano_vectors = await self.project.get_vectors(source=self.name, vector_type=vec_type.value, sha1s=sha1s)
+
+        if not pano_vectors:
+            return ActionResult(notifs=[Notif(
+                NotifType.ERROR,
+                name="NoData",
+                message=f"""The Cluster_By_Tags function needs image vectors.
+                            No such vectors ({vec_type.value}) could be found. 
+                            Compute the vectors and try again.) """,
+                functions=self._get_vector_func_notifs(vec_type))])
+        
         vectors, sha1s = zip(*[(i.data, i.sha1) for i in pano_vectors])
         sha1s_array = np.asarray(sha1s)
         text_vectors_reshaped = np.squeeze(text_vectors, axis=1)
