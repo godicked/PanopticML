@@ -82,7 +82,7 @@ class PanopticML(APlugin):
         task = ComputeVectorTask(self, self.name, vector, instance, self.data_path)
         self.project.add_task(task)
 
-    async def compute_clusters(self, context: ActionContext, vec_type: VectorType, nb_clusters: int = 10):
+    async def compute_clusters(self, context: ActionContext, vec_type: VectorType = VectorType.clip, nb_clusters: int = 10):
         """
         Compute Kmean clusters
         """
