@@ -83,6 +83,9 @@ class PanopticML(APlugin):
         self.project.add_task(task)
 
     async def compute_clusters(self, context: ActionContext, vec_type: VectorType, nb_clusters: int = 10):
+        """
+        Compute Kmean clusters
+        """
         instances = await self.project.get_instances(context.instance_ids)
         sha1_to_instance = group_by_sha1(instances)
         sha1_to_ahash = {i.sha1: i.ahash for i in instances}
@@ -115,11 +118,10 @@ class PanopticML(APlugin):
 
     async def find_images(self, context: ActionContext, vec_type: VectorType = VectorType.clip):
         """
-        :return {
-          min: 0. ; images are considered highly dissimilar
-          max: 1. ; images are considered identical
-          metric: similarity ; Cosine similarity, compute the cosine similarity between the images vectors. See: https://en.wikipedia.org/wiki/Cosine_similarity for more.
-        }
+        Find Similar images using Cosine distances.
+        dist: 0 -> images are considered highly dissimilar
+        dist: 1 -> images are considered identical
+        See: https://en.wikipedia.org/wiki/Cosine_similarity for more.
         """
         instances = await self.project.get_instances(context.instance_ids)
         sha1s = [i.sha1 for i in instances]
@@ -212,7 +214,7 @@ class PanopticML(APlugin):
                             No such vectors ({vec_type.value}) could be found. 
                             Compute the vectors and try again.) """,
                 functions=self._get_vector_func_notifs(vec_type))])
-        
+
         vectors, sha1s = zip(*[(i.data, i.sha1) for i in pano_vectors])
         sha1s_array = np.asarray(sha1s)
         text_vectors_reshaped = np.squeeze(text_vectors, axis=1)
