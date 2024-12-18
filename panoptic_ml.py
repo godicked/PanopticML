@@ -20,7 +20,6 @@ class PluginParams(BaseModel):
     """
     @greyscale: if this is checked, vectors can be recomputed but this time images will be converted to greyscale before
     """
-    similarity_vector: VectorType = VectorType.clip
     greyscale: bool = False
 
 
