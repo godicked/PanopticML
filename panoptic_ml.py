@@ -46,7 +46,7 @@ class PanopticML(APlugin):
     async def start(self):
         await super().start()
 
-        [await self.get_tree(t) for t in VectorType]
+        [await self._get_tree(t) for t in VectorType]
 
     def _get_vector_func_notifs(self, vec_type: VectorType):
         res = [
@@ -60,9 +60,12 @@ class PanopticML(APlugin):
         return res
 
     async def compute_vectors(self, context: ActionContext, vec_type: VectorType):
+        """
+        Compute image vectors of selected vector type
+        """
         instances = await self.project.get_instances(ids=context.instance_ids)
         for i in instances:
-            await self.compute_image_vector(i, vec_type)
+            await self._compute_image_vector(i, vec_type)
 
         notif = Notif(type=NotifType.INFO,
                       name="ComputeVector",
@@ -70,15 +73,18 @@ class PanopticML(APlugin):
         return ActionResult(notifs=[notif])
 
     async def compute_image_vectors_on_import(self, instance: Instance):
-        await self.compute_image_vector(instance, VectorType.clip)
+        await self._compute_image_vector(instance, VectorType.clip)
         if self.params.greyscale:
-            await self.compute_image_vector(instance, VectorType.clip_grey)
+            await self._compute_image_vector(instance, VectorType.clip_grey)
 
     async def compute_all_vectors(self, context: ActionContext):
+        """
+        Compute image vectors of all supported types
+        """
         res = [await self.compute_vectors(context, t) for t in VectorType]
         return ActionResult(notifs=[n for r in res for n in r.notifs])
 
-    async def compute_image_vector(self, instance: Instance, vector: VectorType):
+    async def _compute_image_vector(self, instance: Instance, vector: VectorType):
         task = ComputeVectorTask(self, self.name, vector, instance, self.data_path)
         self.project.add_task(task)
 
@@ -139,7 +145,7 @@ class PanopticML(APlugin):
 
         vector_datas = [x.data for x in vectors]
 
-        tree = await self.get_tree(vec_type)
+        tree = await self._get_tree(vec_type)
         if not tree:
             notif = Notif(type=NotifType.ERROR, name="NoFaissTree",
                           message=f"No Faiss tree could be loaded for vec_type {vec_type.value}")
@@ -157,6 +163,7 @@ class PanopticML(APlugin):
         return ActionResult(groups=[res])
 
     async def search_by_text(self, context: ActionContext, vec_type: VectorType = VectorType.clip, text: str = ''):
+        """Search image using text similarity"""
         if text == '':
             notif = Notif(type=NotifType.ERROR, name="EmptySearchText",
                           message="Please give a valid and not empty text search argument")
@@ -165,7 +172,7 @@ class PanopticML(APlugin):
         context_instances = await self.project.get_instances(context.instance_ids)
         context_sha1s = [i.sha1 for i in context_instances]
 
-        tree = await self.get_tree(vec_type)
+        tree = await self._get_tree(vec_type)
         if not tree:
             notif = Notif(type=NotifType.ERROR, name="NoFaissTree",
                           message=f"No Faiss tree could be loaded for vec_type {vec_type.value}")
@@ -185,7 +192,7 @@ class PanopticML(APlugin):
         return ActionResult(groups=[res])
 
     async def cluster_by_tags(self, context: ActionContext, tags: PropertyId, vec_type: VectorType = VectorType.clip):
-
+        """Cluster images using a Tag/MultiTag property to guide the result"""
         props = await self.project.get_properties(ids=[tags])
         tag_prop = props[0]
 
@@ -248,7 +255,7 @@ class PanopticML(APlugin):
 
         return ActionResult(groups=groups)
 
-    async def get_tree(self, vec_type: VectorType):
+    async def _get_tree(self, vec_type: VectorType):
         tree = self.trees.get(vec_type)
         if tree:
             return tree
@@ -261,7 +268,7 @@ class PanopticML(APlugin):
             self.trees[vec_type] = tree
             return tree
 
-    async def update_tree(self, vec_type: VectorType):
+    async def _update_tree(self, vec_type: VectorType):
         tree = await create_faiss_tree(self, vec_type)
         self.trees[vec_type] = tree
         print(f"updated {vec_type.value} faiss tree")

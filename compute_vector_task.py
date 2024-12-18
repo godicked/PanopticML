@@ -58,7 +58,7 @@ class ComputeVectorTask(Task):
         return res
 
     async def run_if_last(self):
-        await self.plugin.update_tree(self.type)
+        await self.plugin._update_tree(self.type)
 
     @staticmethod
     def compute_image_clip(image_data: bytes):
