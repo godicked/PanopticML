@@ -5,7 +5,7 @@ from sklearn.metrics import silhouette_score
 from panoptic.models import ComputedValue, Vector
 
 
-def make_clusters(vectors: list[Vector],  **kwargs) -> (list[list[str]], list[int]):
+def make_clusters(vectors: list[Vector], **kwargs) -> (list[list[str]], list[int]):
     res_clusters = []
     res_distances = []
     vectors, sha1 = zip(*[(i.data, i.sha1) for i in vectors])
@@ -38,8 +38,8 @@ def _make_clusters_faiss(vectors, nb_clusters=6, **kwargs) -> (np.ndarray, np.nd
     vectors = np.asarray(vectors)
     if nb_clusters == -1:
         k_silhouettes = []
-        max_clusters = min(len(vectors), 100)
-        for k in custom_range(3, max_clusters + 1, [10, 25, 50, 75], increments=[2, 3, 4, 5]):
+        max_clusters = min(len(vectors) - 1, 100)
+        for k in custom_range(3, max_clusters, [10, 25, 50, 75], increments=[2, 3, 4, 5]):
             distances, indices = _make_single_kmean(vectors, k)
             indices = indices.flatten()
             k_silhouettes.append(silhouette_score(vectors, indices))
