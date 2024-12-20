@@ -283,10 +283,11 @@ class PanopticML(APlugin):
             filtered = [r for r in res if r['dist'] >= min_similarity and r['sha1'] in sha1s]
             res_sha1s = [r['sha1'] for r in filtered]
             res_scores = [r['dist'] for r in filtered]
+            score_list = ScoreList(min=0, max=1, max_is_best=True, values=res_scores)
             if len(res_sha1s) == 1:
                 continue
             already_in_clusters.update(res_sha1s)
-            groups.append(Group(sha1s=res_sha1s, scores=res_scores))
+            groups.append(Group(sha1s=res_sha1s, scores=score_list))
         return ActionResult(groups=groups)
 
     async def _get_tree(self, vec_type: VectorType):
