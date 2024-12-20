@@ -280,9 +280,11 @@ class PanopticML(APlugin):
                 continue
             tree = await self._get_tree(VectorType.clip)
             res = tree.query([vector.data], 150)
-            filtered = [r for r in res if r['dist'] >= min_similarity]
+            filtered = [r for r in res if r['dist'] >= min_similarity and r['sha1'] in sha1s]
             res_sha1s = [r['sha1'] for r in filtered]
             res_scores = [r['dist'] for r in filtered]
+            if len(res_sha1s) == 1:
+                continue
             already_in_clusters.update(res_sha1s)
             groups.append(Group(sha1s=res_sha1s, scores=res_scores))
         return ActionResult(groups=groups)
