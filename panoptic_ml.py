@@ -257,7 +257,7 @@ class PanopticML(APlugin):
 
         return ActionResult(groups=groups)
 
-    async def find_duplicates(self, context: ActionContext, min_similarity: float):
+    async def find_duplicates(self, context: ActionContext, min_similarity: float = 0.95):
         """
         Create clusters with at least `min_similarity` between the images of the cluster
         @min_similarity: the minimal similarity value between images of the cluster
@@ -278,7 +278,8 @@ class PanopticML(APlugin):
         for vector, sha1 in zip(vectors, sha1s):
             if sha1 in already_in_clusters:
                 continue
-            res = get_similar_images([vector], 150)
+            tree = await self._get_tree(VectorType.clip)
+            res = tree.query([vector.data], 150)
             filtered = [r for r in res if r['dist'] >= min_similarity]
             res_sha1s = [r['sha1'] for r in filtered]
             res_scores = [r['dist'] for r in filtered]
