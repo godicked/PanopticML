@@ -38,6 +38,7 @@ class PanopticML(APlugin):
         self.add_action_easy(self.find_images, ['similar'])
         self.add_action_easy(self.compute_clusters, ['group'])
         self.add_action_easy(self.cluster_by_tags, ['group'])
+        self.add_action_easy(self.find_duplicates, ['group'])
         self.add_action_easy(self.search_by_text, ['execute'])
 
     async def start(self):
@@ -174,5 +175,34 @@ class PanopticML(APlugin):
         for i, g in enumerate(groups):
             g.name = f"Cluster {tags_text[i]}"
 
+        return ActionResult(groups=groups)
+
+    async def find_duplicates(self, context: ActionContext, min_similarity: float):
+        """
+        Create clusters with at least `min_similarity` between the images of the cluster
+        @min_similarity: the minimal similarity value between images of the cluster
+        """
+        # on récupère les vecteurs
+        # pour chaque vecteur on récupère ses plus similaires (150 pour test) puis on filtre tout ce qui est < min_similarity
+        # on marque tous les images dans le cluster pour ne pas les requêter à nouveau
+        instances = await self.project.get_instances(context.instance_ids)
+        sha1_to_instance = group_by_sha1(instances)
+        sha1s = list(sha1_to_instance.keys())
+        if not sha1s:
+            return None
+        # TODO: get tags text from the PropertyId
+        pano_vectors = await self.project.get_vectors(source=self.name, vector_type='clip', sha1s=sha1s)
+        vectors, sha1s = zip(*[(i.data, i.sha1) for i in pano_vectors])
+        already_in_clusters = set()
+        groups = []
+        for vector, sha1 in zip(vectors, sha1s):
+            if sha1 in already_in_clusters:
+                continue
+            res = get_similar_images([vector], 150)
+            filtered = [r for r in res if r['dist'] >= min_similarity]
+            res_sha1s = [r['sha1'] for r in filtered]
+            res_scores = [r['dist'] for r in filtered]
+            already_in_clusters.update(res_sha1s)
+            groups.append(Group(sha1s=res_sha1s, scores=res_scores))
         return ActionResult(groups=groups)
 
