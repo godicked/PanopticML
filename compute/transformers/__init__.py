@@ -1,3 +1,5 @@
+import time
+
 import numpy as np
 from PIL import Image
 import torch
@@ -34,6 +36,7 @@ class CLIPTransformer:
         return True
 
     def to_vector(self, image: Image) -> np.ndarray:
+        t = time.time()
         image = self.processor(
             text=None,
             images=image,
@@ -42,6 +45,7 @@ class CLIPTransformer:
         embedding = self.model.get_image_features(image)
         # Convertir les embeddings en tableau numpy
         embedding_as_np = embedding.cpu().detach().numpy()
+        print("Computing vector took {} seconds".format(time.time() - t))
         return embedding_as_np[0]
 
     def to_text_vector(self, text: str) -> np.ndarray:
