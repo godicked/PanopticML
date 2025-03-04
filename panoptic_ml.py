@@ -1,3 +1,6 @@
+import asyncio
+from time import sleep
+
 from typing import Dict
 
 import numpy as np
@@ -34,6 +37,7 @@ class PanopticML(APlugin):
         self.params: PluginParams = PluginParams()
 
         self.project.on_instance_import(self.compute_image_vectors_on_import)
+        self.project.on_folder_delete(self.rebuild_trees)
         self.add_action_easy(self.find_images, ['similar'])
         self.add_action_easy(self.compute_clusters, ['group'])
         self.add_action_easy(self.cluster_by_tags, ['group'])
@@ -89,7 +93,8 @@ class PanopticML(APlugin):
         task = ComputeVectorTask(self, self.name, vector, instance, self.data_path)
         self.project.add_task(task)
 
-    async def compute_clusters(self, context: ActionContext, vec_type: VectorType = VectorType.clip, nb_clusters: int = 10):
+    async def compute_clusters(self, context: ActionContext, vec_type: VectorType = VectorType.clip,
+                               nb_clusters: int = 10):
         """
         Computes images clusters with Faiss Kmeans
         @nb_clusters: requested number of clusters
@@ -289,6 +294,10 @@ class PanopticML(APlugin):
             already_in_clusters.update(res_sha1s)
             groups.append(Group(sha1s=res_sha1s, scores=score_list))
         return ActionResult(groups=groups)
+
+    async def rebuild_trees(self, deleted):
+        for type_ in VectorType:
+            await self._update_tree(type_)
 
     async def _get_tree(self, vec_type: VectorType):
         tree = self.trees.get(vec_type)
