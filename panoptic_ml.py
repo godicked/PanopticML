@@ -4,6 +4,7 @@ import numpy as np
 from pydantic import BaseModel
 from sklearn.metrics.pairwise import cosine_similarity
 
+from mistral_test import create_labels_from_group, generate_group_image
 from panoptic.core.plugin.plugin import APlugin
 from panoptic.core.plugin.plugin_project_interface import PluginProjectInterface
 from panoptic.models import Instance, ActionContext, PropertyId, PropertyType
@@ -89,7 +90,7 @@ class PanopticML(APlugin):
         task = ComputeVectorTask(self, self.name, vector, instance, self.data_path)
         self.project.add_task(task)
 
-    async def compute_clusters(self, context: ActionContext, vec_type: VectorType = VectorType.clip, nb_clusters: int = 10):
+    async def compute_clusters(self, context: ActionContext, vec_type: VectorType = VectorType.clip, nb_clusters: int = 10, label_clusters: bool = False):
         """
         Computes images clusters with Faiss Kmeans
         @nb_clusters: requested number of clusters
@@ -115,12 +116,21 @@ class PanopticML(APlugin):
             return ActionResult(notifs=[empty_notif])
         clusters, distances = make_clusters(vectors, method="kmeans", nb_clusters=nb_clusters)
         groups = []
+        groups_images = []
+        labels = []
+        i = 0
         for cluster, distance in zip(clusters, distances):
             group = Group(score=Score(min=0, max=100, max_is_best=False, value=distance))
+            if label_clusters:
+                images = [sha1_to_instance[sha1][0].url for sha1 in cluster[:20]]
+                groups_images.append(generate_group_image(images, i))
+                i += 1
             group.sha1s = sorted(cluster, key=lambda sha1: sha1_to_ahash[sha1])
             groups.append(group)
+        if len(groups_images) > 0:
+            labels = create_labels_from_group(groups_images)
         for i, g in enumerate(groups):
-            g.name = f"Cluster {i}"
+            g.name = f"Cluster {i}" if not len(labels) > 0 else "-".join(labels[i])
 
         return ActionResult(groups=groups)
 
