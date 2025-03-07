@@ -1,6 +1,6 @@
 torch<2.2.0; platform_system == "Darwin"
 numpy<=1.26.0; platform_system == "Darwin"
-scikit-learn<1.5.0; platform_system == "Darwin"
+scikit-learn==1.5.0; platform_system == "Darwin"
 torch
 faiss-cpu
 scipy
