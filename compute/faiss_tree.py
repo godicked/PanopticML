@@ -27,8 +27,8 @@ class FaissTree:
         return [{'sha1': self.labels[i], 'dist': float('%.2f' % (distances[index]))} for index, i in
                 enumerate(indices)]
 
-    def query_texts(self, texts: list[str]):
-        text_vectors = get_text_vectors(texts)
+    def query_texts(self, texts: list[str], transformer):
+        text_vectors = get_text_vectors(texts, transformer)
         return self.query(text_vectors[0])
 
 

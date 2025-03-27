@@ -60,7 +60,7 @@ def create_labels_from_batch(groups_images):
                     sous forme de liste de listes qui devra être un JSON valide, exemple [[mot_cle1, mot_cle2, mot_cle3, mot_cle4, mot_cle5],[...]]."""  # , séparez ces mots par des virgules.
                     # Essayez d'inclure des mots-clés généraux qui pourraient décrire le contenu de nombreuses images à la fois.
                     # Veuillez séparer les mots-clés pour chaque mosaïque avec un point-virgule et NE PAS INCLURE de texte supplémentaire.
-                    f"""Assure toi de ne répondre qu'en français tu me donneras EXACTEMENT {len(groups_images)} LISTES (soit une par image) .
+                    f"""Assure toi de ne répondre qu'en français tu me donneras EXACTEMENT {len(groups_images)} LISTES (soit une par image) et fais bien attention à respecter L'ORDRE des images !.
                     """
                 })
     # Get the chat response

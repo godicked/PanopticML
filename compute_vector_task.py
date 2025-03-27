@@ -15,8 +15,6 @@ from PIL import Image
 from panoptic.core.task.task import Task
 from panoptic.models import Instance, Vector
 
-from .compute.utils import TRANSFORMER
-
 logger = logging.getLogger('PanopticML:VectorTask')
 
 
@@ -32,6 +30,7 @@ class ComputeVectorTask(Task):
         self.name = f'Clip Vectors ({type_.value})'
         self.data_path = data_path
         self.key += f"_{type_.value}"
+        self.transformer = self.plugin.transformer
 
     async def run(self):
         instance = self.instance
@@ -46,10 +45,8 @@ class ComputeVectorTask(Task):
                 image_data = await file.read()
 
         vector_data = None
-        if self.type == VectorType.clip:
-            vector_data = await self._async(self.compute_image_clip, image_data)
-        if self.type == VectorType.clip_grey:
-            vector_data = await self._async(self.compute_image_clip_gray, image_data)
+        vector_data = await self._async(self.compute_image_clip, image_data)
+
         if vector_data is None:
             return
         vector = Vector(self.source, self.type.name, instance.sha1, vector_data)
@@ -60,20 +57,14 @@ class ComputeVectorTask(Task):
     async def run_if_last(self):
         await self.plugin._update_tree(self.type)
 
-    @staticmethod
-    def compute_image_clip(image_data: bytes):
+    def compute_image_clip(self, image_data: bytes, vector_type: VectorType):
+        if vector_type == VectorType.clip:
+            mode = 'RGBA'
+        else:
+            mode = 'L'
         image = Image.open(io.BytesIO(image_data))
-        image = image.convert('RGBA')
-        vector = TRANSFORMER.to_vector(image)
-
-        del image
-        return vector
-
-    @staticmethod
-    def compute_image_clip_gray(image_data: bytes):
-        image = Image.open(io.BytesIO(image_data))
-        image = image.convert('L')
-        vector = TRANSFORMER.to_vector(image)
+        image = image.convert(mode)
+        vector = self.transformer.to_vector(image)
 
         del image
         return vector

@@ -1,21 +1,19 @@
-import asyncio
-from time import sleep
-
 from typing import Dict
 
 import numpy as np
 from pydantic import BaseModel
 from sklearn.metrics.pairwise import cosine_similarity
 
-from mistral_test import create_labels_from_group, generate_group_image
 from panoptic.core.plugin.plugin import APlugin
 from panoptic.core.plugin.plugin_project_interface import PluginProjectInterface
 from panoptic.models import Instance, ActionContext, PropertyId, PropertyType
 from panoptic.models.results import Group, ActionResult, Notif, NotifType, NotifFunction, ScoreList, Score
 from panoptic.utils import group_by_sha1
+
 from .compute import make_clusters
 from .compute.faiss_tree import load_faiss_tree, create_faiss_tree, FaissTree
 from .compute.similarity import get_text_vectors
+from .compute.transformers import get_transformer
 from .compute_vector_task import ComputeVectorTask
 from .models import VectorType
 
@@ -23,8 +21,10 @@ from .models import VectorType
 class PluginParams(BaseModel):
     """
     @greyscale: if this is checked, vectors can be recomputed but this time images will be converted to greyscale before
+    @model: the name of the transformer to user, values: clip | mobilenet, default to clip
     """
     greyscale: bool = False
+    model: str = "clip"
 
 
 class PanopticML(APlugin):
@@ -48,6 +48,13 @@ class PanopticML(APlugin):
         self._comp_all_vec_desc = self.add_action_easy(self.compute_all_vectors, ['execute'])
 
         self.trees: Dict[VectorType, FaissTree] = {}
+        self._transformer = None
+
+    @property
+    def transformer(self):
+        if self._transformer is None:
+            self._transformer = self._load_transformer()
+        return self._transformer
 
     async def start(self):
         await super().start()
@@ -69,6 +76,7 @@ class PanopticML(APlugin):
         """
         Compute image vectors of selected vector type
         """
+
         instances = await self.project.get_instances(ids=context.instance_ids)
         for i in instances:
             await self._compute_image_vector(i, vec_type)
@@ -94,7 +102,8 @@ class PanopticML(APlugin):
         task = ComputeVectorTask(self, self.name, vector, instance, self.data_path)
         self.project.add_task(task)
 
-    async def compute_clusters(self, context: ActionContext, vec_type: VectorType = VectorType.clip, nb_clusters: int = 10, label_clusters: bool = False):
+    async def compute_clusters(self, context: ActionContext, vec_type: VectorType = VectorType.clip,
+                               nb_clusters: int = 10): #, label_clusters: bool = False):
         """
         Computes images clusters with Faiss Kmeans
         @nb_clusters: requested number of clusters
@@ -123,6 +132,10 @@ class PanopticML(APlugin):
         groups_images = []
         labels = []
         i = 0
+        # TODO: put back mistral when it's working properly
+        label_clusters = False
+        if label_clusters:
+            from mistral_test import create_labels_from_group, generate_group_image
         for cluster, distance in zip(clusters, distances):
             group = Group(score=Score(min=0, max=100, max_is_best=False, value=distance))
             if label_clusters:
@@ -178,7 +191,7 @@ class PanopticML(APlugin):
         res = Group(sha1s=res_sha1s, scores=res_scores)
         return ActionResult(groups=[res])
 
-    async def search_by_text(self, context: ActionContext, vec_type: VectorType = VectorType.clip, text: str = ''):
+    async def search_by_text(self, context: ActionContext, vec_type: VectorType = VectorType.clip, text: str = '', min_similarity: float = 0.5):
         """Search image using text similarity"""
         if text == '':
             notif = Notif(type=NotifType.ERROR, name="EmptySearchText",
@@ -194,16 +207,26 @@ class PanopticML(APlugin):
                           message=f"No Faiss tree could be loaded for vec_type {vec_type.value}")
             return ActionResult(notifs=[notif])
 
-        text_instances = tree.query_texts([text])
+        try:
+            text_instances = tree.query_texts([text], self.transformer)
+        except ValueError as e:
+            return ActionResult(notifs=[Notif(type=NotifType.ERROR, name="TextSimilarityError", message=str(e))])
+
 
         # filter out images if they are not in the current context
         filtered_instances = [inst for inst in text_instances if inst['sha1'] in context_sha1s]
 
         index = {r['sha1']: r['dist'] for r in filtered_instances}
-        res_sha1s = list(index.keys())
-        res_scores = [index[sha1] for sha1 in res_sha1s]
-        scores = ScoreList(min=0, max=1, values=res_scores)
-        res = Group(sha1s=res_sha1s, scores=scores)
+        res_sha1s = np.asarray(list(index.keys()))
+        res_scores = np.asarray([index[sha1] for sha1 in res_sha1s])
+
+        # remap score since text to image similary tends to be between 0.1 and 0.4 and filter by similarity
+        remaped_scores = np.around(np.interp(res_scores, [0, 0.375], [0, 1]), decimals=2)
+        final_scores = remaped_scores[remaped_scores >= min_similarity].tolist()
+        final_sha1s = res_sha1s[remaped_scores >= min_similarity].tolist()
+
+        scores = ScoreList(min=0, max=1, values=final_scores, description="Similarity between image and text never give less than 0.1 and more than 0.4, hence here the values, remapped between 0 and 1")
+        res = Group(sha1s=final_sha1s, scores=scores)
         res.name = "Text Search: " + text
         return ActionResult(groups=[res])
 
@@ -226,7 +249,7 @@ class PanopticML(APlugin):
             return None
         # TODO: get tags text from the PropertyId
         tags_text = [t.value for t in await self.project.get_tags(property_ids=[tags])]
-        text_vectors = get_text_vectors(tags_text)
+        text_vectors = get_text_vectors(tags_text, self.transformer)
         pano_vectors = await self.project.get_vectors(source=self.name, vector_type=vec_type.value, sha1s=sha1s)
 
         if not pano_vectors:
@@ -326,3 +349,6 @@ class PanopticML(APlugin):
         self.trees[vec_type] = tree
         print(f"updated {vec_type.value} faiss tree")
         return tree
+
+    def _load_transformer(self):
+        return get_transformer(self.params.model)

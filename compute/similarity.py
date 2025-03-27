@@ -1,11 +1,11 @@
 import numpy as np
 
-from .utils import TRANSFORMER
 
-
-def get_text_vectors(texts: [str]):
+def get_text_vectors(texts: [str], transformer):
     vectors = []
-    if TRANSFORMER.can_handle_text:
+    if transformer.can_handle_text:
         for text in texts:
-            vectors.append(TRANSFORMER.to_text_vector(text))
+            vectors.append(transformer.to_text_vector(text))
+    else:
+        raise ValueError(f"The selected transformer {transformer.name_or_path} does not support text vectors.")
     return np.asarray(vectors)
