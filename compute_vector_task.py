@@ -57,8 +57,8 @@ class ComputeVectorTask(Task):
     async def run_if_last(self):
         await self.plugin._update_tree(self.type)
 
-    def compute_image_clip(self, image_data: bytes, vector_type: VectorType):
-        if vector_type == VectorType.clip:
+    def compute_image_clip(self, image_data: bytes):
+        if self.type == VectorType.clip:
             mode = 'RGBA'
         else:
             mode = 'L'
