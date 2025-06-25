@@ -207,13 +207,13 @@ class PanopticML(APlugin):
             return ActionResult(notifs=[notif])
 
         try:
-            text_instances = tree.query_texts([text], self.transformer)
+            resulting_images = tree.query_texts([text], self.transformer)
         except ValueError as e:
             return ActionResult(notifs=[Notif(type=NotifType.ERROR, name="TextSimilarityError", message=str(e))])
 
 
         # filter out images if they are not in the current context
-        filtered_instances = [inst for inst in text_instances if inst['sha1'] in context_sha1s]
+        filtered_instances = [inst for inst in resulting_images if inst['sha1'] in context_sha1s]
 
         index = {r['sha1']: r['dist'] for r in filtered_instances}
         res_sha1s = np.asarray(list(index.keys()))

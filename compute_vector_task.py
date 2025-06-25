@@ -5,7 +5,7 @@ import logging
 from typing import TYPE_CHECKING
 
 from compute.transformers import Transformer
-from utils import transform_image
+from utils import preprocess_image
 from .models import VectorType
 
 if TYPE_CHECKING:
@@ -60,7 +60,7 @@ class ComputeVectorTask(Task):
         await self.plugin._update_tree(self.type)
 
     def compute_image_clip(self, image_data: bytes):
-        image = transform_image(self.type, image_data)
+        image = preprocess_image(image_data, self.type)
         vector = self.transformer.to_vector(image)
 
         del image
