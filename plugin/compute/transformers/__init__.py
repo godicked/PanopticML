@@ -7,8 +7,9 @@ class TransformerName(Enum):
     mobilenet = "mobilenet"
     clip = "clip"
     siglip = "siglip"
+    auto = "auto"
 
-def get_transformer(model: TransformerName=TransformerName.clip):
+def get_transformer(model: TransformerName=TransformerName.clip, hugging_face_model=None):
     match model:
         case TransformerName.mobilenet:
             return GoogleTransformer()
@@ -16,6 +17,8 @@ def get_transformer(model: TransformerName=TransformerName.clip):
             return CLIPTransformer()
         case TransformerName.siglip:
             return SIGLIPTransformer()
+        case TransformerName.auto:
+            return AutoTransformer(hugging_face_model)
 
 class Transformer(object):
     def __init__(self):
@@ -34,6 +37,7 @@ class GoogleTransformer(Transformer):
         from transformers import MobileNetV2Model, AutoImageProcessor
         self.model = MobileNetV2Model.from_pretrained("google/mobilenet_v2_1.0_224")
         self.processor = AutoImageProcessor.from_pretrained("google/mobilenet_v2_1.0_224")
+        self.name = "MobileNetV2"
 
     @property
     def can_handle_text(self):
@@ -55,6 +59,7 @@ class CLIPTransformer(Transformer):
         self.model = AutoModel.from_pretrained(ckpt).to(self.device)
         self.tokenizer = AutoTokenizer.from_pretrained(ckpt)
         self.processor = AutoProcessor.from_pretrained(ckpt)
+        self.name = "CLIP"
 
 
     @property
@@ -79,7 +84,6 @@ class CLIPTransformer(Transformer):
         embedding_as_np = text_embeddings.cpu().detach().numpy()
         return embedding_as_np.reshape(1, -1)
 
-
 class SIGLIPTransformer(Transformer):
     def __init__(self):
         super().__init__()
@@ -88,6 +92,35 @@ class SIGLIPTransformer(Transformer):
         self.model = AutoModel.from_pretrained(ckpt).to(self.device)
         self.tokenizer = AutoTokenizer.from_pretrained(ckpt)
         self.processor = AutoProcessor.from_pretrained(ckpt)
+        self.name = "SIGLIP"
+
+    @property
+    def can_handle_text(self):
+        return True
+
+    def to_vector(self, image: Image) -> np.ndarray:
+        inputs = (self.processor(images=[image], return_tensors="pt")
+                  .to(self.device))
+        image_embeddings = self.model.get_image_features(**inputs)
+        embedding_as_np = image_embeddings.cpu().detach().numpy()
+        return embedding_as_np[0]
+
+
+    def to_text_vector(self, text: str) -> np.ndarray:
+        inputs = self.tokenizer(text=text, return_tensors="pt").to(self.device)
+        text_embeddings = self.model.get_text_features(**inputs)
+        # Convertir les embeddings en tableau numpy
+        embedding_as_np = text_embeddings.cpu().detach().numpy()
+        return embedding_as_np.reshape(1, -1)
+
+class AutoTransformer(Transformer):
+    def __init__(self, hugging_face_model=None):
+        super().__init__()
+        from transformers import AutoModel, AutoTokenizer, AutoProcessor
+        self.model = AutoModel.from_pretrained(hugging_face_model).to(self.device)
+        self.tokenizer = AutoTokenizer.from_pretrained(hugging_face_model)
+        self.processor = AutoProcessor.from_pretrained(hugging_face_model)
+        self.name = hugging_face_model
 
     @property
     def can_handle_text(self):

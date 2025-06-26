@@ -2,7 +2,7 @@ import io
 
 from PIL import Image
 
-from models import VectorType
+from .models import VectorType
 
 
 def preprocess_image(image_data: bytes, vector_type: VectorType = VectorType.rgb):

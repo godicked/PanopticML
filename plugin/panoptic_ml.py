@@ -21,10 +21,11 @@ from .models import VectorType
 class PluginParams(BaseModel):
     """
     @greyscale: if this is checked, vectors can be recomputed but this time images will be converted to greyscale before
-    @model: the name of the transformer to user, values: clip | mobilenet, default to clip
+    @model: the name of the transformer to user, values: clip | mobilenet | siglip | auto, default to clip, if using auto, need to specify a huggingface model name, for instance: google/siglip2-base-patch16-224
     """
     greyscale: bool = False
     model: str = "clip"
+    hugging_face_model: str = None
 
 
 class PanopticML(APlugin):
@@ -87,9 +88,9 @@ class PanopticML(APlugin):
         return ActionResult(notifs=[notif])
 
     async def compute_image_vectors_on_import(self, instance: Instance):
-        await self._compute_image_vector(instance, VectorType.clip)
+        await self._compute_image_vector(instance, VectorType.rgb)
         if self.params.greyscale:
-            await self._compute_image_vector(instance, VectorType.clip_grey)
+            await self._compute_image_vector(instance, VectorType.greyscale)
 
     async def compute_all_vectors(self, context: ActionContext):
         """
@@ -350,4 +351,11 @@ class PanopticML(APlugin):
         return tree
 
     def _load_transformer(self):
-        return get_transformer(TransformerName[self.params.model])
+        if TransformerName[self.params.model] == TransformerName.auto and not self.params.hugging_face_model:
+            return ActionResult(notifs=[Notif(
+                NotifType.ERROR,
+                name="No hugging face model specified",
+                message=f"""
+                Automodel selected but no hugging face model provided
+                """)])
+        return get_transformer(TransformerName[self.params.model], self.params.hugging_face_model)

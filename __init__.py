@@ -1,3 +1,3 @@
-from .panoptic_ml import PanopticML
+from .plugin.panoptic_ml import PanopticML
 
 plugin_class = PanopticML

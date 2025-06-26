@@ -1,18 +1,15 @@
 from __future__ import annotations
 
-import io
 import logging
 from typing import TYPE_CHECKING
 
-from compute.transformers import Transformer
-from utils import preprocess_image
+from .utils import preprocess_image
 from .models import VectorType
 
 if TYPE_CHECKING:
     from . import PanopticML
 
 import aiofiles
-from PIL import Image
 
 from panoptic.core.task.task import Task
 from panoptic.models import Instance, Vector
@@ -29,10 +26,10 @@ class ComputeVectorTask(Task):
         self.source = source
         self.type = type_
         self.instance = instance
-        self.name = f'Clip Vectors ({type_.value})'
+        self.transformer = self.plugin.transformer
+        self.name = f'{self.transformer.name} Vectors ({type_.value})'
         self.data_path = data_path
         self.key += f"_{type_.value}"
-        self.transformer = self.plugin.transformer
 
     async def run(self):
         instance = self.instance

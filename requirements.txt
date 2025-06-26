@@ -6,5 +6,5 @@ faiss-cpu
 scipy
 scikit-learn
 numpy
-transformers
+transformers<4.52.0
 mistralai

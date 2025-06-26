@@ -2,7 +2,7 @@ import faiss
 from scipy.stats import hmean
 import numpy as np
 from sklearn.metrics import silhouette_score
-from panoptic.models import ComputedValue, Vector
+from panoptic.models import Vector
 
 
 def make_clusters(vectors: list[Vector], **kwargs) -> (list[list[str]], list[int]):

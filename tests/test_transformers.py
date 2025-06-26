@@ -1,14 +1,15 @@
 import os
+import pathlib
 from itertools import product
 
 import faiss
 import pytest
 import numpy as np
 
-from compute.faiss_tree import FaissTree
-from compute.transformers import get_transformer, TransformerName, Transformer
-from models import VectorType
-from utils import preprocess_image
+from ..plugin.compute.faiss_tree import FaissTree
+from ..plugin.compute.transformers import get_transformer, TransformerName, Transformer
+from ..plugin.models import VectorType
+from ..plugin.utils import preprocess_image
 
 def create_faiss_tree(vectors, images):
     vectors = np.asarray(vectors)
@@ -22,7 +23,8 @@ def create_faiss_tree(vectors, images):
     return tree
 
 def get_images():
-    return [os.path.join('./resources', f) for f in os.listdir('./resources') if f.split('.')[-1] in ['jpg', 'jpeg', 'png', 'gif']]
+    res_dir = pathlib.Path(__file__).parent / 'resources'
+    return [f for f in res_dir.iterdir() if f.suffix in ['.jpg', '.jpeg', '.png', '.gif']]
 
 def generate_vectors(transformer: Transformer):
     vectors = []
@@ -37,6 +39,8 @@ def generate_vectors(transformer: Transformer):
 def all_models():
     models = {}
     for model_name in TransformerName:
+        if model_name == TransformerName.auto:
+            continue
         print('preloading ' + model_name.name)
         models[model_name] = get_transformer(model_name)
     return models
@@ -87,7 +91,7 @@ def test_text_to_vector(model_name, all_models):
 def test_index_creation(model_name, all_models):
     transformer = all_models[model_name]
     vectors, images = generate_vectors(transformer)
-    create_faiss_tree(vectors)
+    create_faiss_tree(vectors, images)
 
 @pytest.mark.parametrize("model_name", TransformerName)
 def test_text_image_similarity(model_name, all_models):
