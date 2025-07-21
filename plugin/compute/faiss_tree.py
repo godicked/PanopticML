@@ -4,8 +4,8 @@ import pickle
 import faiss
 import numpy as np
 
+from panoptic.models import VectorType
 from .similarity import get_text_vectors
-from ..models import VectorType
 from panoptic.core.plugin.plugin import APlugin
 
 
@@ -32,14 +32,14 @@ class FaissTree:
         return self.query(text_vectors[0])
 
 
-def gen_tree_file_name(vec_type: VectorType):
-    return f"{vec_type.value}_faiss_tree.pkl"
+def gen_tree_file_name(type_id: int):
+    return f"faiss_tree_vec_id_{type_id}.pkl"
 
 
-async def create_faiss_tree(plugin: APlugin, vec_type: VectorType):
+async def create_faiss_tree(plugin: APlugin, type_id: int):
     project = plugin.project
-    name = gen_tree_file_name(vec_type)
-    vectors = await project.get_vectors(plugin.name, vector_type=vec_type.value)
+    name = gen_tree_file_name(type_id)
+    vectors = await project.get_vectors(type_id)
 
     if vectors is None or len(vectors) == 0:
         return
@@ -61,10 +61,38 @@ async def create_faiss_tree(plugin: APlugin, vec_type: VectorType):
     return FaissTree(index=index, labels=sha1_list)
 
 
-def load_faiss_tree(plugin: APlugin, vec_type: VectorType) -> FaissTree | None:
+def load_faiss_tree(plugin: APlugin, vec_type: int) -> FaissTree | None:
     name = gen_tree_file_name(vec_type)
     path = os.path.join(plugin.data_path, name)
     if not os.path.exists(path):
         return None
     with open(path, 'rb') as f:
         return pickle.load(f)
+
+
+class FaissTreeManager:
+    def __init__(self, plugin: APlugin):
+        self.trees: dict[int, FaissTree] = {}
+        self.plugin = plugin
+
+    async def get(self, vec_type: VectorType):
+        type_id = vec_type.id
+
+        if self.trees.get(type_id):
+            return self.trees[type_id]
+
+        tree = load_faiss_tree(self.plugin, type_id)
+        if tree:
+            self.trees[type_id] = tree
+            return tree
+        tree = await create_faiss_tree(self.plugin, type_id)
+        if tree:
+            self.trees[type_id] = tree
+            return tree
+
+    async def rebuild_tree(self, vec_type: VectorType):
+        type_id = vec_type.id
+        tree = await create_faiss_tree(self.plugin, type_id)
+        self.trees[type_id] = tree
+        print(f"updated vec [{type_id}] faiss tree")
+        return tree
