@@ -64,6 +64,11 @@ class PanopticML(APlugin):
         await self._load_vector_types()
         [await self.trees.get(t) for t in self.vector_types]
 
+        if len(self.vector_types) == 0:
+            await self.project.add_vector_type(VectorType(source=self.name,
+                                                          params={"model": ModelEnum.clip.value, "greyscale": False}))
+            self.project.ui.update_counter.vector_type += 1
+
     async def create_default_vector_type(self, ctx: ActionContext, model: ModelEnum, greyscale: bool):
         vec = VectorType(source=self.name, params={"model": model.value, "greyscale": greyscale})
         await self.project.add_vector_type(vec)
@@ -170,7 +175,7 @@ class PanopticML(APlugin):
                 NotifType.ERROR,
                 name="NoData",
                 message=f"""For the similarity function image vectors are needed.
-                            No such vectors ({vec_type.value}) could be found. 
+                            No such vectors ({vector_name(vec_type)}) could be found. 
                             Compute the vectors and try again.) """,
                 functions=self._get_vector_func_notifs(vec_type))])
 
