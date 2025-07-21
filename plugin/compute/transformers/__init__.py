@@ -1,5 +1,6 @@
 from enum import Enum
 
+import torch
 from PIL import Image
 import numpy as np
 
@@ -7,6 +8,7 @@ class TransformerName(Enum):
     mobilenet = "mobilenet"
     clip = "clip"
     siglip = "siglip"
+    dinov2 = "dinov2" # Added Dinov2
     auto = "auto"
 
 def get_transformer(model: TransformerName=TransformerName.clip, hugging_face_model=None):
@@ -17,6 +19,8 @@ def get_transformer(model: TransformerName=TransformerName.clip, hugging_face_mo
             return CLIPTransformer()
         case TransformerName.siglip:
             return SIGLIPTransformer()
+        case TransformerName.dinov2: # Added Dinov2
+            return Dinov2Transformer()
         case TransformerName.auto:
             return AutoTransformer(hugging_face_model)
 
@@ -139,4 +143,24 @@ class AutoTransformer(Transformer):
         text_embeddings = self.model.get_text_features(**inputs)
         # Convertir les embeddings en tableau numpy
         embedding_as_np = text_embeddings.cpu().detach().numpy()
-        return embedding_as_np.reshape(1, -1)
+        return embedding_as_np[0]
+
+
+class Dinov2Transformer(Transformer):
+    def __init__(self):
+        super().__init__()
+        from transformers import AutoModel, AutoImageProcessor
+        ckpt = "facebook/dinov2-base"
+        self.model = AutoModel.from_pretrained(ckpt).to(self.device)
+        self.processor = AutoImageProcessor.from_pretrained(ckpt)
+        self.name = "Dinov2"
+
+    @property
+    def can_handle_text(self):
+        return False
+
+    def to_vector(self, image: Image) -> np.ndarray:
+        inputs = self.processor(images=image, return_tensors="pt").to(self.device)
+        with torch.no_grad():
+            outputs = self.model(**inputs)
+        return outputs.last_hidden_state.mean(dim=1).cpu().numpy()[0]

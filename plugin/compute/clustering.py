@@ -3,6 +3,7 @@ from scipy.stats import hmean
 import numpy as np
 from sklearn.metrics import silhouette_score
 from panoptic.models import Vector
+import hdbscan
 
 
 def make_clusters(vectors: list[Vector], **kwargs) -> (list[list[str]], list[int]):
@@ -37,14 +38,12 @@ def _make_clusters_faiss(vectors, nb_clusters=6, **kwargs) -> (np.ndarray, np.nd
 
     vectors = np.asarray(vectors)
     if nb_clusters == -1:
-        k_silhouettes = []
-        max_clusters = min(len(vectors) - 1, 100)
-        for k in custom_range(3, max_clusters, [10, 25, 50, 75], increments=[2, 3, 4, 5]):
-            distances, indices = _make_single_kmean(vectors, k)
-            indices = indices.flatten()
-            k_silhouettes.append(silhouette_score(vectors, indices))
-        nb_clusters = int(np.argmax(k_silhouettes))
-    distances, indices = _make_single_kmean(vectors, nb_clusters)
+        clusterer = hdbscan.HDBSCAN(min_cluster_size=5, gen_min_span_tree=True)
+        clusterer.fit(vectors)
+        distances = 1 - clusterer.probabilities_
+        indices = clusterer.labels_
+    else:
+        distances, indices = _make_single_kmean(vectors, nb_clusters)
     return indices.flatten(), distances.flatten()
 
 
