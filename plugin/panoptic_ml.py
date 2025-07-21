@@ -17,6 +17,7 @@ from .compute_vector_task import ComputeVectorTask
 
 
 class PluginParams(BaseModel):
+    compute_on_import: bool = True
     pass
 
 
@@ -46,7 +47,7 @@ class PanopticML(APlugin):
         self.project.on_folder_delete(self.rebuild_trees)
         self.add_action_easy(self.create_default_vector_type, ['vector_type'])
         self.add_action_easy(self.create_custom_vector_type, ['vector_type'])
-        self._comp_vec_desc = self.add_action_easy(self.compute_vectors2, ['vector'])
+        self._comp_vec_desc = self.add_action_easy(self.compute_vectors, ['vector'])
         self.add_action_easy(self.find_images, ['similar'])
         self.add_action_easy(self.compute_clusters, ['group'])
         self.add_action_easy(self.cluster_by_tags, ['group'])
@@ -55,13 +56,11 @@ class PanopticML(APlugin):
 
         self.trees = FaissTreeManager(self)
         self.transformers = TransformerManager()
-        self.vector_types: list[VectorType] = []
 
     # TODO
     async def start(self):
         await super().start()
 
-        await self._load_vector_types()
         [await self.trees.get(t) for t in self.vector_types]
 
         if len(self.vector_types) == 0:
@@ -72,13 +71,13 @@ class PanopticML(APlugin):
     async def create_default_vector_type(self, ctx: ActionContext, model: ModelEnum, greyscale: bool):
         vec = VectorType(source=self.name, params={"model": model.value, "greyscale": greyscale})
         await self.project.add_vector_type(vec)
-        await self._load_vector_types()
+        await self.load_vector_types()
         return ActionResult()
 
     async def create_custom_vector_type(self, ctx: ActionContext, model: str, greyscale: bool):
         vec = VectorType(source=self.name, params={"model": model, "greyscale": greyscale})
         await self.project.add_vector_type(vec)
-        await self._load_vector_types()
+        await self.load_vector_types()
         return ActionResult()
 
     def _get_vector_func_notifs(self, vec_type: VectorType):
@@ -89,7 +88,7 @@ class PanopticML(APlugin):
         ]
         return res
 
-    async def compute_vectors2(self, context: ActionContext, vec_type: OwnVectorType, all_vectors: bool = False):
+    async def compute_vectors(self, context: ActionContext, vec_type: OwnVectorType, all_vectors: bool = False):
         types = [vec_type]
         if all_vectors:
             types = self.vector_types
@@ -104,6 +103,8 @@ class PanopticML(APlugin):
         return ActionResult(notifs=[notif])
 
     async def compute_image_vectors_on_import(self, instance: Instance):
+        if not self.params.compute_on_import:
+            return
         for t in self.vector_types:
             await self._compute_image_vector(instance, t)
 
@@ -340,6 +341,3 @@ class PanopticML(APlugin):
         types = await self.project.get_vector_types(self.name)
         for type_ in types:
             await self.trees.rebuild_tree(type_)
-
-    async def _load_vector_types(self):
-        self.vector_types = await self.project.get_vector_types(self.name)
