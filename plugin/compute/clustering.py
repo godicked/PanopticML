@@ -1,7 +1,6 @@
 import faiss
 from scipy.stats import hmean
 import numpy as np
-from sklearn.metrics import silhouette_score
 from panoptic.models import Vector
 import hdbscan
 
@@ -18,12 +17,8 @@ def make_clusters(vectors: list[Vector], **kwargs) -> (list[list[str]], list[int
     for cluster in list(set(clusters)):
         sha1_cluster = sha1[clusters == cluster]
         current_cluster_distances = distances[clusters == cluster]
-        # sort current cluster by the distances
-        # sorted_indices = np.argsort(current_cluster_distances)
-        # sorted_cluster = sha1_cluster[sorted_indices]
-
         if distances is not None:
-            res_distances.append(hmean(current_cluster_distances))
+            res_distances.append(np.mean(current_cluster_distances))
         res_clusters.append(list(sha1_cluster))
     # sort clusters by distances
     sorted_clusters = [cluster for _, cluster in sorted(zip(res_distances, res_clusters))]
@@ -40,8 +35,22 @@ def _make_clusters_faiss(vectors, nb_clusters=6, **kwargs) -> (np.ndarray, np.nd
     if nb_clusters == -1:
         clusterer = hdbscan.HDBSCAN(min_cluster_size=5, gen_min_span_tree=True)
         clusterer.fit(vectors)
-        distances = 1 - clusterer.probabilities_
         indices = clusterer.labels_
+        probabilities = clusterer.probabilities_
+        distances = np.zeros_like(probabilities, dtype=np.float32)
+        unique_clusters = np.unique(indices)
+        # compute distances just like the one returned by kmeans to have consistent metrics
+        for cluster_id in unique_clusters:
+            if cluster_id == -1:
+                distances[indices == -1] = 100.0
+                continue
+            cluster_mask = (indices == cluster_id)
+            cluster_vectors = vectors[cluster_mask]
+            cluster_probabilities = probabilities[cluster_mask]
+            center_local_index = np.argmax(cluster_probabilities)
+            center_vector = cluster_vectors[center_local_index].reshape(1, -1)
+            dists = faiss.pairwise_distances(center_vector, cluster_vectors)[0]
+            distances[cluster_mask] = dists
     else:
         distances, indices = _make_single_kmean(vectors, nb_clusters)
     return indices.flatten(), distances.flatten()
