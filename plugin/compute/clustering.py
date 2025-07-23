@@ -2,7 +2,6 @@ import faiss
 from scipy.stats import hmean
 import numpy as np
 from panoptic.models import Vector
-import hdbscan
 
 
 def make_clusters(vectors: list[Vector], **kwargs) -> (list[list[str]], list[int]):
@@ -33,6 +32,7 @@ def _make_clusters_faiss(vectors, nb_clusters=6, **kwargs) -> (np.ndarray, np.nd
 
     vectors = np.asarray(vectors)
     if nb_clusters == -1:
+        import hdbscan
         clusterer = hdbscan.HDBSCAN(min_cluster_size=5, gen_min_span_tree=True)
         clusterer.fit(vectors)
         indices = clusterer.labels_

@@ -1,8 +1,8 @@
 from typing import Dict
 
 import numpy as np
+import torch
 from pydantic import BaseModel
-from sklearn.metrics.pairwise import cosine_similarity
 
 from panoptic.core.plugin.plugin import APlugin
 from panoptic.core.plugin.plugin_project_interface import PluginProjectInterface
@@ -16,6 +16,7 @@ from .compute.similarity import get_text_vectors
 from .compute.transformers import get_transformer, TransformerName
 from .compute_vector_task import ComputeVectorTask
 from .models import VectorType
+from .utils import similarity_matrix
 
 
 class PluginParams(BaseModel):
@@ -263,34 +264,39 @@ class PanopticML(APlugin):
 
         vectors, sha1s = zip(*[(i.data, i.sha1) for i in pano_vectors])
         sha1s_array = np.asarray(sha1s)
-        text_vectors_reshaped = np.squeeze(text_vectors, axis=1)
 
-        images_vectors_norm = vectors / np.linalg.norm(vectors, axis=1, keepdims=True)
-        text_vectors_norm = text_vectors_reshaped / np.linalg.norm(text_vectors_reshaped, axis=1, keepdims=True)
-
-        matrix = cosine_similarity(images_vectors_norm, text_vectors_norm)
-        closest_text_indices = np.argmax(matrix, axis=1)
-        similarities = np.max(matrix, axis=1)
+        similarities, closest_text_indices = similarity_matrix(vectors, text_vectors)
 
         clusters = []
         distances = []
+        clusters_text = []
+        cluster_sims = []
 
-        for text_index in list(set(closest_text_indices)):
+        for text_index in closest_text_indices.unique():
+            clusters_text.append(tags_text[text_index])
             cluster = sha1s_array[closest_text_indices == text_index]
+
+            # similarities of each image inside the cluster and the text
             cluster_sim = similarities[closest_text_indices == text_index]
-            distance = (1 - np.mean(cluster_sim)) * 100
-            sorting_index = cluster_sim.argsort()
-            sorted_cluster = cluster[sorting_index[::-1]]
+            sorted_sim = cluster_sim.sort(descending=True).values
+            cluster_sims.append([round(x, 2) for x in sorted_sim.tolist()])
+
+            # sort cluster by descending similarity
+            sorting_index = cluster_sim.argsort(descending=True)
+            sorted_cluster = cluster[sorting_index]
             clusters.append(sorted_cluster)
+
+            # compute mean distance of the images
+            distance = float((1 - torch.mean(cluster_sim)) * 100)
             distances.append(distance)
 
         groups = []
-        for cluster, distance in zip(clusters, distances):
-            group = Group(score=distance)
+        for cluster, distance, name, cluster_sim in zip(clusters, distances, clusters_text, cluster_sims):
+            similarities = ScoreList(min=0, max=1, max_is_best=True, values=cluster_sim)
+            group = Group(score=Score(distance, min=0, max=200, max_is_best=False, description="Mean distance between the images of this cluster and the queried text"), scores=similarities)
             group.sha1s = list(cluster)
+            group.name = f"Cluster {name}"
             groups.append(group)
-        for i, g in enumerate(groups):
-            g.name = f"Cluster {tags_text[i]}"
 
         return ActionResult(groups=groups)
 

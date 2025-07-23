@@ -10,7 +10,7 @@ import torch
 from ..plugin.compute.faiss_tree import FaissTree
 from ..plugin.compute.transformers import get_transformer, TransformerName, Transformer
 from ..plugin.models import VectorType
-from ..plugin.utils import preprocess_image
+from ..plugin.utils import preprocess_image, cosine_similarity
 
 transformers_to_test = [transformer for transformer in TransformerName if transformer != TransformerName.auto]
 
@@ -29,23 +29,6 @@ def get_images():
     res_dir = pathlib.Path(__file__).parent / 'resources'
     return [f for f in res_dir.iterdir() if f.suffix in ['.jpg', '.jpeg', '.png', '.gif'] and f.name != 'cropped_chat.png']
 
-
-def calculate_cosine_similarity(embedding1, embedding2):
-    """
-    Calcule la similarité cosinus entre deux embeddings normalisés
-
-    Args:
-        embedding1: premier embedding (normalisé)
-        embedding2: deuxième embedding (normalisé)
-
-    Returns:
-        float: similarité cosinus (entre -1 et 1)
-    """
-    # Pour des embeddings normalisés, similarité cosinus = produit scalaire
-    embedding1_torch = torch.from_numpy(embedding1).squeeze()
-    embedding2_torch = torch.from_numpy(embedding2).squeeze()
-
-    return torch.dot(embedding1_torch, embedding2_torch).item()
 
 def generate_vectors(transformer: Transformer, images=None):
     vectors = []

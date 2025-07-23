@@ -15,10 +15,8 @@ class FaissTree:
         self.labels = labels
 
     def query(self, vectors: list[np.ndarray], k=999999):
-        vector_center = np.mean(vectors, axis=0)
-        vector = np.asarray([vector_center])
+        vector = np.asarray(vectors)
 
-        faiss.normalize_L2(vector)
         real_k = min(k, len(self.labels))
         vector = vector.reshape(1, -1)
         dist, ind = self.index.search(vector, real_k)
