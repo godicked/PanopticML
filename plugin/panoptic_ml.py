@@ -135,7 +135,7 @@ class PanopticML(APlugin):
         i = 0
         # TODO: put back mistral when it's working properly
         if label_clusters:
-            from mistral_test import create_labels_from_group, generate_group_image
+            from .mistral_test import create_labels_from_group, generate_group_image
         for cluster, distance in zip(clusters, distances):
             group = Group(score=Score(min=0, max=100, max_is_best=False, value=distance))
             if label_clusters:

@@ -8,7 +8,7 @@ class TransformerName(Enum):
     mobilenet = "mobilenet"
     clip = "clip"
     siglip = "siglip"
-    dinov2 = "dinov2" # Added Dinov2
+    dinov2 = "dinov2"
     auto = "auto"
 
 def get_transformer(model: TransformerName=TransformerName.clip, hugging_face_model=None):
@@ -19,7 +19,7 @@ def get_transformer(model: TransformerName=TransformerName.clip, hugging_face_mo
             return CLIPTransformer()
         case TransformerName.siglip:
             return SIGLIPTransformer()
-        case TransformerName.dinov2: # Added Dinov2
+        case TransformerName.dinov2:
             return Dinov2Transformer()
         case TransformerName.auto:
             return AutoTransformer(hugging_face_model)
@@ -30,10 +30,42 @@ class Transformer(object):
         from transformers import logging
         logging.set_verbosity_error()
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        self.tokenizer = None
+        self.processor = None
+        self.model = None
 
     @property
     def can_handle_text(self):
         return False
+
+class AutoTransformer(Transformer):
+    def __init__(self, hugging_face_model=None):
+        super().__init__()
+        from transformers import AutoModel, AutoProcessor
+        if hugging_face_model:
+            self.model = AutoModel.from_pretrained(hugging_face_model).to(self.device)
+            self.processor = AutoProcessor.from_pretrained(hugging_face_model)
+            self.name = hugging_face_model
+
+    @property
+    def can_handle_text(self):
+        return True
+
+    def to_vector(self, image: Image) -> np.ndarray:
+        inputs = self.processor(images=[image], return_tensors="pt")
+        inputs = {k: v.to(self.device) for k, v in inputs.items()}
+        with torch.no_grad():
+            image_features = self.model.get_image_features(**inputs)
+            image_features = image_features / image_features.norm(dim=-1, keepdim=True)
+        return image_features.cpu().numpy().flatten()
+
+    def to_text_vector(self, text: str) -> np.ndarray:
+        inputs = self.processor(text=[text], return_tensors="pt")
+        inputs = {k: v.to(self.device) for k, v in inputs.items()}
+        with torch.no_grad():
+            text_features = self.model.get_text_features(**inputs)
+            text_features = text_features / text_features.norm(dim=-1, keepdim=True)
+        return text_features.cpu().numpy().flatten()
 
 class GoogleTransformer(Transformer):
     def __init__(self):
@@ -54,15 +86,10 @@ class GoogleTransformer(Transformer):
         vector = pooled_output1.flatten()
         return vector
 
-class CLIPTransformer(Transformer):
+class CLIPTransformer(AutoTransformer):
     def __init__(self):
-        super().__init__()
-        # from transformers import CLIPModel, CLIPProcessor, CLIPTokenizer
-        from transformers import AutoModel, AutoTokenizer, AutoProcessor
-        ckpt = "openai/clip-vit-base-patch32"
-        self.model = AutoModel.from_pretrained(ckpt).to(self.device)
-        self.tokenizer = AutoTokenizer.from_pretrained(ckpt)
-        self.processor = AutoProcessor.from_pretrained(ckpt)
+        model_name = "openai/clip-vit-base-patch32"
+        super().__init__(model_name)
         self.name = "CLIP"
 
 
@@ -70,80 +97,15 @@ class CLIPTransformer(Transformer):
     def can_handle_text(self):
         return True
 
-    def to_vector(self, image: Image) -> np.ndarray:
-        image = self.processor(
-            text=None,
-            images=image,
-            return_tensors="pt"
-        )["pixel_values"].to(self.device)  # Transférer sur le bon appareil
-        embedding = self.model.get_image_features(image)
-        # Convertir les embeddings en tableau numpy
-        embedding_as_np = embedding.cpu().detach().numpy()
-        return embedding_as_np[0]
-
-    def to_text_vector(self, text: str) -> np.ndarray:
-        inputs = self.tokenizer(text=text, return_tensors="pt").to(self.device)  # Transférer sur le bon appareil
-        text_embeddings = self.model.get_text_features(**inputs)
-        # Convertir les embeddings en tableau numpy
-        embedding_as_np = text_embeddings.cpu().detach().numpy()
-        return embedding_as_np.reshape(1, -1)
-
-class SIGLIPTransformer(Transformer):
+class SIGLIPTransformer(AutoTransformer):
     def __init__(self):
-        super().__init__()
-        from transformers import AutoModel, AutoTokenizer, AutoProcessor
-        ckpt = "google/siglip2-so400m-patch16-naflex"
-        self.model = AutoModel.from_pretrained(ckpt).to(self.device)
-        self.tokenizer = AutoTokenizer.from_pretrained(ckpt)
-        self.processor = AutoProcessor.from_pretrained(ckpt)
+        model_name = "google/siglip2-so400m-patch16-naflex"
+        super().__init__(model_name)
         self.name = "SIGLIP"
 
     @property
     def can_handle_text(self):
         return True
-
-    def to_vector(self, image: Image) -> np.ndarray:
-        inputs = (self.processor(images=[image], return_tensors="pt")
-                  .to(self.device))
-        image_embeddings = self.model.get_image_features(**inputs)
-        embedding_as_np = image_embeddings.cpu().detach().numpy()
-        return embedding_as_np[0]
-
-
-    def to_text_vector(self, text: str) -> np.ndarray:
-        inputs = self.tokenizer(text=text, return_tensors="pt").to(self.device)
-        text_embeddings = self.model.get_text_features(**inputs)
-        # Convertir les embeddings en tableau numpy
-        embedding_as_np = text_embeddings.cpu().detach().numpy()
-        return embedding_as_np.reshape(1, -1)
-
-class AutoTransformer(Transformer):
-    def __init__(self, hugging_face_model=None):
-        super().__init__()
-        from transformers import AutoModel, AutoTokenizer, AutoProcessor
-        self.model = AutoModel.from_pretrained(hugging_face_model).to(self.device)
-        self.tokenizer = AutoTokenizer.from_pretrained(hugging_face_model)
-        self.processor = AutoProcessor.from_pretrained(hugging_face_model)
-        self.name = hugging_face_model
-
-    @property
-    def can_handle_text(self):
-        return True
-
-    def to_vector(self, image: Image) -> np.ndarray:
-        inputs = (self.processor(images=[image], return_tensors="pt")
-                  .to(self.device))
-        image_embeddings = self.model.get_image_features(**inputs)
-        embedding_as_np = image_embeddings.cpu().detach().numpy()
-        return embedding_as_np[0]
-
-
-    def to_text_vector(self, text: str) -> np.ndarray:
-        inputs = self.tokenizer(text=text, return_tensors="pt").to(self.device)
-        text_embeddings = self.model.get_text_features(**inputs)
-        # Convertir les embeddings en tableau numpy
-        embedding_as_np = text_embeddings.cpu().detach().numpy()
-        return embedding_as_np[0]
 
 
 class Dinov2Transformer(Transformer):
@@ -152,7 +114,7 @@ class Dinov2Transformer(Transformer):
         from transformers import AutoModel, AutoImageProcessor
         ckpt = "facebook/dinov2-base"
         self.model = AutoModel.from_pretrained(ckpt).to(self.device)
-        self.processor = AutoImageProcessor.from_pretrained(ckpt)
+        self.processor = AutoImageProcessor.from_pretrained(ckpt, use_fast=True)
         self.name = "Dinov2"
 
     @property

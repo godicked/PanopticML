@@ -5,6 +5,7 @@ from itertools import product
 import faiss
 import pytest
 import numpy as np
+import torch
 
 from ..plugin.compute.faiss_tree import FaissTree
 from ..plugin.compute.transformers import get_transformer, TransformerName, Transformer
@@ -27,6 +28,24 @@ def create_faiss_tree(vectors, images):
 def get_images():
     res_dir = pathlib.Path(__file__).parent / 'resources'
     return [f for f in res_dir.iterdir() if f.suffix in ['.jpg', '.jpeg', '.png', '.gif'] and f.name != 'cropped_chat.png']
+
+
+def calculate_cosine_similarity(embedding1, embedding2):
+    """
+    Calcule la similarité cosinus entre deux embeddings normalisés
+
+    Args:
+        embedding1: premier embedding (normalisé)
+        embedding2: deuxième embedding (normalisé)
+
+    Returns:
+        float: similarité cosinus (entre -1 et 1)
+    """
+    # Pour des embeddings normalisés, similarité cosinus = produit scalaire
+    embedding1_torch = torch.from_numpy(embedding1).squeeze()
+    embedding2_torch = torch.from_numpy(embedding2).squeeze()
+
+    return torch.dot(embedding1_torch, embedding2_torch).item()
 
 def generate_vectors(transformer: Transformer, images=None):
     vectors = []
@@ -128,7 +147,7 @@ def test_text_image_similarity(model_name, all_models):
             img_vec = image_vector.flatten() if image_vector.ndim > 1 else image_vector
 
             # Calcul de la similarité cosinus
-            cosine_sim = np.dot(text_vec, img_vec) / (np.linalg.norm(text_vec) * np.linalg.norm(img_vec))
+            cosine_sim = calculate_cosine_similarity(text_vec, img_vec)
             similarities.append((cosine_sim, image_name, j))
 
         # Trouver l'image avec la plus haute similarité
@@ -151,10 +170,4 @@ def test_text_image_similarity(model_name, all_models):
             f"mais trouvé '{best_match_name}' (similarité: {best_similarity:.4f})"
         )
 
-    # tree = create_faiss_tree(image_vectors, images)
-    # for index, text in enumerate(texts):
-    #     result_images = tree.query_texts([text], transformer)
-    #     best_result = os.path.basename(result_images[0]['sha1'])
-    #     print(f"Best image for text: {text} is {best_result}")
-    #     assert best_result == expected_results[index]
 
