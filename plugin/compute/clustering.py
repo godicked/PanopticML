@@ -4,7 +4,7 @@ import torch
 
 from panoptic.models import Vector
 from panoptic.models.results import ScoreList, Score, Group
-from plugin.utils import similarity_matrix
+from ..utils import similarity_matrix
 
 
 def make_clusters(vectors: list[Vector], **kwargs) -> (list[list[str]], list[int]):

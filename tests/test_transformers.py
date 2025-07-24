@@ -130,7 +130,7 @@ def test_text_image_similarity(model_name, all_models):
             img_vec = image_vector.flatten() if image_vector.ndim > 1 else image_vector
 
             # Calcul de la similarité cosinus
-            cosine_sim = calculate_cosine_similarity(text_vec, img_vec)
+            cosine_sim = cosine_similarity(text_vec, img_vec)
             similarities.append((cosine_sim, image_name, j))
 
         # Trouver l'image avec la plus haute similarité
