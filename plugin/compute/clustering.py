@@ -1,8 +1,10 @@
 import faiss
-from scipy.stats import hmean
 import numpy as np
-from sklearn.metrics import silhouette_score
+import torch
+
 from panoptic.models import Vector
+from panoptic.models.results import ScoreList, Score, Group
+from ..utils import similarity_matrix
 
 
 def make_clusters(vectors: list[Vector], **kwargs) -> (list[list[str]], list[int]):
@@ -17,12 +19,8 @@ def make_clusters(vectors: list[Vector], **kwargs) -> (list[list[str]], list[int
     for cluster in list(set(clusters)):
         sha1_cluster = sha1[clusters == cluster]
         current_cluster_distances = distances[clusters == cluster]
-        # sort current cluster by the distances
-        # sorted_indices = np.argsort(current_cluster_distances)
-        # sorted_cluster = sha1_cluster[sorted_indices]
-
         if distances is not None:
-            res_distances.append(hmean(current_cluster_distances))
+            res_distances.append(np.mean(current_cluster_distances))
         res_clusters.append(list(sha1_cluster))
     # sort clusters by distances
     sorted_clusters = [cluster for _, cluster in sorted(zip(res_distances, res_clusters))]
@@ -37,15 +35,72 @@ def _make_clusters_faiss(vectors, nb_clusters=6, **kwargs) -> (np.ndarray, np.nd
 
     vectors = np.asarray(vectors)
     if nb_clusters == -1:
-        k_silhouettes = []
-        max_clusters = min(len(vectors) - 1, 100)
-        for k in custom_range(3, max_clusters, [10, 25, 50, 75], increments=[2, 3, 4, 5]):
-            distances, indices = _make_single_kmean(vectors, k)
-            indices = indices.flatten()
-            k_silhouettes.append(silhouette_score(vectors, indices))
-        nb_clusters = int(np.argmax(k_silhouettes))
-    distances, indices = _make_single_kmean(vectors, nb_clusters)
+        import hdbscan
+        clusterer = hdbscan.HDBSCAN(min_cluster_size=5, gen_min_span_tree=True)
+        clusterer.fit(vectors)
+        indices = clusterer.labels_
+        probabilities = clusterer.probabilities_
+        distances = np.zeros_like(probabilities, dtype=np.float32)
+        unique_clusters = np.unique(indices)
+        # compute distances just like the one returned by kmeans to have consistent metrics
+        for cluster_id in unique_clusters:
+            if cluster_id == -1:
+                distances[indices == -1] = 100.0
+                continue
+            cluster_mask = (indices == cluster_id)
+            cluster_vectors = vectors[cluster_mask]
+            cluster_probabilities = probabilities[cluster_mask]
+            center_local_index = np.argmax(cluster_probabilities)
+            center_vector = cluster_vectors[center_local_index].reshape(1, -1)
+            dists = faiss.pairwise_distances(center_vector, cluster_vectors)[0]
+            distances[cluster_mask] = dists
+    else:
+        distances, indices = _make_single_kmean(vectors, nb_clusters)
     return indices.flatten(), distances.flatten()
+
+
+def cluster_by_text(image_vectors: list[Vector], text_vectors: list[np.array], text_labels: list[str]) -> list[Group]:
+    vectors, sha1s = zip(*[(i.data, i.sha1) for i in image_vectors])
+    sha1s_array = np.asarray(sha1s)
+
+    similarities, closest_text_indices = similarity_matrix(vectors, text_vectors)
+
+    clusters = []
+    distances = []
+    clusters_text = []
+    cluster_sims = []
+
+    for text_index in closest_text_indices.unique():
+        clusters_text.append(text_labels[text_index])
+        cluster = sha1s_array[closest_text_indices == text_index]
+
+        # similarities of each image inside the cluster and the text
+        cluster_sim = similarities[closest_text_indices == text_index]
+        sorted_sim = cluster_sim.sort(descending=True).values
+        cluster_sims.append([round(x, 2) for x in sorted_sim.tolist()])
+
+        # sort cluster by descending similarity
+        sorting_index = cluster_sim.argsort(descending=True)
+        sorted_cluster = cluster[sorting_index]
+        if type(sorted_cluster) is not np.ndarray:
+            sorted_cluster = np.array([sorted_cluster])
+        clusters.append(sorted_cluster)
+
+        # compute mean distance of the images
+        distance = float((1 - torch.mean(cluster_sim)) * 100)
+        distances.append(distance)
+
+    groups = []
+    for cluster, distance, name, cluster_sim in zip(clusters, distances, clusters_text, cluster_sims):
+        similarities = ScoreList(min=0, max=1, max_is_best=True, values=cluster_sim)
+        group = Group(score=Score(distance, min=0, max=200, max_is_best=False,
+                                  description="Mean distance between the images of this cluster and the queried text"),
+                      scores=similarities)
+        group.sha1s = list(cluster)
+        group.name = f"Cluster {name}"
+        groups.append(group)
+
+    return groups
 
 
 def custom_range(min_i, max_i, steps, increments):

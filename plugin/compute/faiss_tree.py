@@ -5,8 +5,8 @@ import faiss
 import numpy as np
 
 from panoptic.models import VectorType
-from .similarity import get_text_vectors
 from panoptic.core.plugin.plugin import APlugin
+from plugin.compute.transformer import Transformer
 
 
 class FaissTree:
@@ -17,7 +17,6 @@ class FaissTree:
     def query(self, vectors: list[np.ndarray], k=999999):
         vector_center = np.mean(vectors, axis=0)
         vector = np.asarray([vector_center])
-
         faiss.normalize_L2(vector)
         real_k = min(k, len(self.labels))
         vector = vector.reshape(1, -1)
@@ -27,9 +26,9 @@ class FaissTree:
         return [{'sha1': self.labels[i], 'dist': float('%.2f' % (distances[index]))} for index, i in
                 enumerate(indices)]
 
-    def query_texts(self, texts: list[str], transformer):
-        text_vectors = get_text_vectors(texts, transformer)
-        return self.query(text_vectors[0])
+    def query_texts(self, texts: list[str], transformer: Transformer):
+        text_vectors = transformer.get_text_vectors(texts)
+        return self.query(text_vectors)
 
 
 def gen_tree_file_name(type_id: int):

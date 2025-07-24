@@ -10,8 +10,8 @@ from panoptic.models import Instance, ActionContext, PropertyId, PropertyType, V
 from panoptic.models.results import Group, ActionResult, Notif, NotifType, NotifFunction, ScoreList, Score
 from panoptic.utils import group_by_sha1
 from .compute import make_clusters
+from .compute.clustering import cluster_by_text
 from .compute.faiss_tree import FaissTreeManager
-from .compute.similarity import get_text_vectors
 from .compute.transformer import TransformerManager
 from .compute_vector_task import ComputeVectorTask
 
@@ -24,6 +24,8 @@ class PluginParams(BaseModel):
 class ModelEnum(Enum):
     clip = "openai/clip-vit-base-patch32"
     mobilenet = "google/mobilenet_v2_1.0_224"
+    siglip = "google/siglip2-so400m-patch16-naflex"
+    dinov = "facebook/dinov2-base"
 
 
 def vector_name(vec_type: VectorType):
@@ -68,17 +70,23 @@ class PanopticML(APlugin):
                                                           params={"model": ModelEnum.clip.value, "greyscale": False}))
             self.project.ui.update_counter.vector_type += 1
 
-    async def create_default_vector_type(self, ctx: ActionContext, model: ModelEnum, greyscale: bool):
+    async def create_default_vector_type(self, ctx: ActionContext, model: ModelEnum, greyscale: bool, compute_vectors: bool = True):
         vec = VectorType(source=self.name, params={"model": model.value, "greyscale": greyscale})
         await self.project.add_vector_type(vec)
         await self.load_vector_types()
-        return ActionResult()
+        if not compute_vectors:
+            return ActionResult()
+        res = await self.compute_vectors(ctx, vec, False)
+        return res
 
-    async def create_custom_vector_type(self, ctx: ActionContext, model: str, greyscale: bool):
+    async def create_custom_vector_type(self, ctx: ActionContext, model: str, greyscale: bool, compute_vectors: bool = True):
         vec = VectorType(source=self.name, params={"model": model, "greyscale": greyscale})
         await self.project.add_vector_type(vec)
         await self.load_vector_types()
-        return ActionResult()
+        if not compute_vectors:
+            return ActionResult()
+        res = await self.compute_vectors(ctx, vec, False)
+        return res
 
     def _get_vector_func_notifs(self, vec_type: VectorType):
         res = [
@@ -143,7 +151,7 @@ class PanopticML(APlugin):
         i = 0
         # TODO: put back mistral when it's working properly
         if label_clusters:
-            from mistral_test import create_labels_from_group, generate_group_image
+            from ..mistral_test import create_labels_from_group, generate_group_image
         for cluster, distance in zip(clusters, distances):
             group = Group(score=Score(min=0, max=100, max_is_best=False, value=distance))
             if label_clusters:
@@ -259,7 +267,7 @@ class PanopticML(APlugin):
         # TODO: get tags text from the PropertyId
         tags_text = [t.value for t in await self.project.get_tags(property_ids=[tags])]
         transformer = self.transformers.get(vec_type)
-        text_vectors = get_text_vectors(tags_text, transformer)
+        text_vectors = transformer.get_text_vectors(tags_text)
         pano_vectors = await self.project.get_vectors(type_id=vec_type.id, sha1s=sha1s)
 
         if not pano_vectors:
@@ -271,36 +279,7 @@ class PanopticML(APlugin):
                             Compute the vectors and try again.) """,
                 functions=self._get_vector_func_notifs(vec_type))])
 
-        vectors, sha1s = zip(*[(i.data, i.sha1) for i in pano_vectors])
-        sha1s_array = np.asarray(sha1s)
-        text_vectors_reshaped = np.squeeze(text_vectors, axis=1)
-
-        images_vectors_norm = vectors / np.linalg.norm(vectors, axis=1, keepdims=True)
-        text_vectors_norm = text_vectors_reshaped / np.linalg.norm(text_vectors_reshaped, axis=1, keepdims=True)
-
-        matrix = cosine_similarity(images_vectors_norm, text_vectors_norm)
-        closest_text_indices = np.argmax(matrix, axis=1)
-        similarities = np.max(matrix, axis=1)
-
-        clusters = []
-        distances = []
-
-        for text_index in list(set(closest_text_indices)):
-            cluster = sha1s_array[closest_text_indices == text_index]
-            cluster_sim = similarities[closest_text_indices == text_index]
-            distance = (1 - np.mean(cluster_sim)) * 100
-            sorting_index = cluster_sim.argsort()
-            sorted_cluster = cluster[sorting_index[::-1]]
-            clusters.append(sorted_cluster)
-            distances.append(distance)
-
-        groups = []
-        for cluster, distance in zip(clusters, distances):
-            group = Group(score=distance)
-            group.sha1s = list(cluster)
-            groups.append(group)
-        for i, g in enumerate(groups):
-            g.name = f"Cluster {tags_text[i]}"
+        groups = cluster_by_text(pano_vectors, text_vectors, tags_text)
 
         return ActionResult(groups=groups)
 

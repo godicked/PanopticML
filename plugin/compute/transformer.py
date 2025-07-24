@@ -1,87 +1,161 @@
+from enum import Enum
+
+import torch
+from PIL import Image
 import numpy as np
-from PIL.Image import Image
+from transformers import AutoConfig
 
 from panoptic.models import VectorType
+from plugin.utils import resolve_device
+
+
+class TransformerName(Enum):
+    mobilenet = "mobilenet"
+    clip = "clip"
+    siglip = "siglip"
+    dinov2 = "dinov2"
+    auto = "auto"
+
+
+def get_model_type(huggingface_model: str):
+    return AutoConfig.from_pretrained(huggingface_model).model_type
+
+
+def get_transformer(huggingface_model=None):
+    model_type = get_model_type
+    if model_type in type_to_class_mapping:
+        return type_to_class_mapping[model_type](huggingface_model)
+    return AutoTransformer(huggingface_model)
 
 
 class Transformer(object):
-    def __init__(self):
-        import torch
+    def __init__(self, huggingface_model: str):
         from transformers import logging
         logging.set_verbosity_error()
-        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        self.device = resolve_device()
+        self.tokenizer = None
+        self.processor = None
+        self.model = None
+
+        self.name = huggingface_model
 
     @property
     def can_handle_text(self):
         return False
 
+    def to_vector(self, image: Image):
+        pass
+
+    def to_text_vector(self, text: str):
+        pass
+
+    def get_text_vectors(self, texts: [str]):
+        vectors = []
+        if self.can_handle_text:
+            for text in texts:
+                vectors.append(self.to_text_vector(text))
+        else:
+            raise ValueError(f"The selected transformer {self.name} does not support text vectors.")
+        return np.asarray(vectors)
+
 
 class AutoTransformer(Transformer):
-    def __init__(self, hugging_face_model=None):
-        super().__init__()
-        from transformers import AutoModel, AutoTokenizer, AutoProcessor
-
-        try:
-            self.model = AutoModel.from_pretrained(hugging_face_model).to(self.device)
-        except BaseException:
-            pass
-
-        try:
-            self.tokenizer = AutoTokenizer.from_pretrained(hugging_face_model)
-        except BaseException:
-            pass
-
-        try:
-            self.processor = AutoProcessor.from_pretrained(hugging_face_model)
-        except BaseException:
-            if self.processor is None:
-                from transformers import AutoImageProcessor
-                self.processor = AutoImageProcessor.from_pretrained(hugging_face_model)
-
-        self.name = hugging_face_model
+    def __init__(self, huggingface_model):
+        super().__init__(huggingface_model)
+        from transformers import AutoModel, AutoProcessor
+        self.model = AutoModel.from_pretrained(huggingface_model).to(self.device)
+        self.processor = AutoProcessor.from_pretrained(huggingface_model)
 
     @property
     def can_handle_text(self):
         return True
 
     def to_vector(self, image: Image) -> np.ndarray:
-        # Preprocess the image (batch of 1)
-        inputs = self.processor(images=[image], return_tensors="pt").to(self.device)
-
-        # If the model implements get_image_features (e.g. CLIP), use it directly
-        if hasattr(self.model, "get_image_features"):
-            image_embeddings = self.model.get_image_features(**inputs)
-            vector = image_embeddings.detach().cpu().numpy()[0]
-
-        else:
-            # Run forward pass
-            outputs = self.model(**inputs)
-
-            # Try pooler_output if exists (e.g. some BERT variants)
-            if hasattr(outputs, "pooler_output") and outputs.pooler_output is not None:
-                pooled = outputs.pooler_output
-            else:
-                # Otherwise use last_hidden_state with mean pooling
-                pooled = outputs.last_hidden_state.mean(dim=1)
-
-            vector = pooled.detach().cpu().numpy()[0]
-
-        return vector
+        inputs = self.processor(images=[image], return_tensors="pt")
+        inputs = {k: v.to(self.device) for k, v in inputs.items()}
+        with torch.no_grad():
+            image_features = self.model.get_image_features(**inputs)
+            image_features = image_features / image_features.norm(dim=-1, keepdim=True)
+        return image_features.cpu().numpy().flatten()
 
     def to_text_vector(self, text: str) -> np.ndarray:
-        inputs = self.tokenizer(text=text, return_tensors="pt").to(self.device)
-        text_embeddings = self.model.get_text_features(**inputs)
-        # Convertir les embeddings en tableau numpy
-        embedding_as_np = text_embeddings.cpu().detach().numpy()
-        return embedding_as_np.reshape(1, -1)
+        inputs = self.processor(text=[text], return_tensors="pt")
+        inputs = {k: v.to(self.device) for k, v in inputs.items()}
+        with torch.no_grad():
+            text_features = self.model.get_text_features(**inputs)
+            text_features = text_features / text_features.norm(dim=-1, keepdim=True)
+        return text_features.cpu().numpy().flatten()
+
+
+class MobileNetTransformer(Transformer):
+    def __init__(self, huggingface_model: str):
+        super().__init__(huggingface_model)
+        from transformers import MobileNetV2Model, AutoImageProcessor
+        self.model = MobileNetV2Model.from_pretrained(huggingface_model)
+        self.processor = AutoImageProcessor.from_pretrained(huggingface_model)
+
+    @property
+    def can_handle_text(self):
+        return False
+
+    def to_vector(self, image: Image) -> np.ndarray:
+        input1 = self.processor(images=image, return_tensors="pt")
+        output1 = self.model(**input1)
+        pooled_output1 = output1[1].detach().numpy()
+        vector = pooled_output1.flatten()
+        return vector
+
+
+class CLIPTransformer(AutoTransformer):
+    def __init__(self, huggingface_model):
+        super().__init__(huggingface_model)
+
+    @property
+    def can_handle_text(self):
+        return True
+
+
+class SIGLIPTransformer(AutoTransformer):
+    def __init__(self, huggingface_model):
+        super().__init__(huggingface_model)
+
+    @property
+    def can_handle_text(self):
+        return True
+
+
+class Dinov2Transformer(Transformer):
+    def __init__(self, huggingface_model: str):
+        super().__init__(huggingface_model)
+        from transformers import AutoModel, AutoImageProcessor
+        self.model = AutoModel.from_pretrained(huggingface_model).to(self.device)
+        self.processor = AutoImageProcessor.from_pretrained(huggingface_model, use_fast=True)
+
+    @property
+    def can_handle_text(self):
+        return False
+
+    def to_vector(self, image: Image) -> np.ndarray:
+        inputs = self.processor(images=image, return_tensors="pt").to(self.device)
+        with torch.no_grad():
+            outputs = self.model(**inputs)
+        return outputs.last_hidden_state.mean(dim=1).cpu().numpy()[0]
+
+
+type_to_class_mapping = {
+    "mobilenet_v2": MobileNetTransformer,
+    "dinov2": Dinov2Transformer,
+    "siglip2": SIGLIPTransformer,
+    "clip": CLIPTransformer
+}
 
 
 class TransformerManager:
     def __init__(self):
-        self.transformers: dict[int, AutoTransformer] = {}
+        self.transformers: dict[int, Transformer] = {}
 
     def get(self, vec_type: VectorType):
         if self.transformers.get(vec_type.id):
             return self.transformers[vec_type.id]
-        self.transformers[vec_type.id] = AutoTransformer(vec_type.params["model"])
+        self.transformers[vec_type.id] = get_transformer(vec_type.params["model"])
         return self.transformers[vec_type.id]
