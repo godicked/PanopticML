@@ -5,7 +5,6 @@ from itertools import product
 import faiss
 import pytest
 import numpy as np
-import torch
 
 from ..plugin.compute.faiss_tree import FaissTree
 from ..plugin.compute.transformers import get_transformer, TransformerName, Transformer

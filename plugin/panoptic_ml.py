@@ -1,7 +1,6 @@
 from typing import Dict
 
 import numpy as np
-import torch
 from pydantic import BaseModel
 
 from panoptic.core.plugin.plugin import APlugin
@@ -17,7 +16,6 @@ from .compute.similarity import get_text_vectors
 from .compute.transformers import get_transformer, TransformerName
 from .compute_vector_task import ComputeVectorTask
 from .models import VectorType
-from .utils import similarity_matrix
 
 
 class PluginParams(BaseModel):
