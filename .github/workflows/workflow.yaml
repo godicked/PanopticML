@@ -31,6 +31,7 @@ jobs:
     - name: Installation des dépendances
       run: |
         pip install pytest
+        pip install panoptic
         pip install -r requirements.txt
 
     - name: Lancement des tests avec pytest
