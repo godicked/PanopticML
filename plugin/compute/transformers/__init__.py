@@ -4,6 +4,9 @@ import torch
 from PIL import Image
 import numpy as np
 
+from plugin.utils import resolve_device
+
+
 class TransformerName(Enum):
     mobilenet = "mobilenet"
     clip = "clip"
@@ -29,7 +32,7 @@ class Transformer(object):
         import torch
         from transformers import logging
         logging.set_verbosity_error()
-        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        self.device = resolve_device()
         self.tokenizer = None
         self.processor = None
         self.model = None

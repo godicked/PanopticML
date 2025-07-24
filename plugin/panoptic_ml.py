@@ -281,7 +281,7 @@ class PanopticML(APlugin):
         if not sha1s:
             return None
         # TODO: get tags text from the PropertyId
-        pano_vectors = await self.project.get_vectors(source=self.name, vector_type='clip', sha1s=sha1s)
+        pano_vectors = await self.project.get_vectors(source=self.name, vector_type=VectorType.rgb.value, sha1s=sha1s)
         vectors, sha1s = zip(*[(i.data, i.sha1) for i in pano_vectors])
         already_in_clusters = set()
         groups = []

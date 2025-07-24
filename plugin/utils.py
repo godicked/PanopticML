@@ -44,3 +44,11 @@ def similarity_matrix(vectors1: list[np.array], vectors2: list[np.array]) -> (to
     matrix = torch.mm(astorch1, astorch2.T)
     best_scores, best_indices = torch.max(matrix, dim=1)
     return best_scores, best_indices
+
+def resolve_device():
+    device = 'cpu'
+    if torch.cuda.is_available():
+        device = 'cuda'
+    elif torch.backends.mps.is_available():
+        device = 'mps'
+    return device
