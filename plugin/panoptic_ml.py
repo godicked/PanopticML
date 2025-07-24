@@ -11,6 +11,7 @@ from panoptic.models.results import Group, ActionResult, Notif, NotifType, Notif
 from panoptic.utils import group_by_sha1
 
 from .compute import make_clusters
+from .compute.clustering import cluster_by_text
 from .compute.faiss_tree import load_faiss_tree, create_faiss_tree, FaissTree
 from .compute.similarity import get_text_vectors
 from .compute.transformers import get_transformer, TransformerName
@@ -262,41 +263,7 @@ class PanopticML(APlugin):
                             Compute the vectors and try again.) """,
                 functions=self._get_vector_func_notifs(vec_type))])
 
-        vectors, sha1s = zip(*[(i.data, i.sha1) for i in pano_vectors])
-        sha1s_array = np.asarray(sha1s)
-
-        similarities, closest_text_indices = similarity_matrix(vectors, text_vectors)
-
-        clusters = []
-        distances = []
-        clusters_text = []
-        cluster_sims = []
-
-        for text_index in closest_text_indices.unique():
-            clusters_text.append(tags_text[text_index])
-            cluster = sha1s_array[closest_text_indices == text_index]
-
-            # similarities of each image inside the cluster and the text
-            cluster_sim = similarities[closest_text_indices == text_index]
-            sorted_sim = cluster_sim.sort(descending=True).values
-            cluster_sims.append([round(x, 2) for x in sorted_sim.tolist()])
-
-            # sort cluster by descending similarity
-            sorting_index = cluster_sim.argsort(descending=True)
-            sorted_cluster = cluster[sorting_index]
-            clusters.append(sorted_cluster)
-
-            # compute mean distance of the images
-            distance = float((1 - torch.mean(cluster_sim)) * 100)
-            distances.append(distance)
-
-        groups = []
-        for cluster, distance, name, cluster_sim in zip(clusters, distances, clusters_text, cluster_sims):
-            similarities = ScoreList(min=0, max=1, max_is_best=True, values=cluster_sim)
-            group = Group(score=Score(distance, min=0, max=200, max_is_best=False, description="Mean distance between the images of this cluster and the queried text"), scores=similarities)
-            group.sha1s = list(cluster)
-            group.name = f"Cluster {name}"
-            groups.append(group)
+        groups = cluster_by_text(pano_vectors, text_vectors, tags_text)
 
         return ActionResult(groups=groups)
 
