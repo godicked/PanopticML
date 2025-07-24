@@ -31,17 +31,8 @@ jobs:
     - name: Installation des dépendances
       run: |
         pip install pytest
+        pip install panoptic
         pip install -r requirements.txt
 
     - name: Lancement des tests avec pytest
       run: pytest -v
-
-    - name: Upload des résultats de tests (optionnel)
-      uses: actions/upload-artifact@v3
-      if: always()
-      with:
-        name: test-results-${{ matrix.os }}-python${{ matrix.python-version }}
-        path: |
-          test-results/
-          .coverage
-        retention-days: 30
