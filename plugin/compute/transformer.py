@@ -9,14 +9,6 @@ from panoptic.models import VectorType
 from plugin.utils import resolve_device
 
 
-class TransformerName(Enum):
-    mobilenet = "mobilenet"
-    clip = "clip"
-    siglip = "siglip"
-    dinov2 = "dinov2"
-    auto = "auto"
-
-
 def get_model_type(huggingface_model: str):
     return AutoConfig.from_pretrained(huggingface_model).model_type
 

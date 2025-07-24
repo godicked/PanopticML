@@ -12,7 +12,6 @@ def preprocess_image(image_data: bytes, params: dict):
         image = image.convert('RGB')
     return image
 
-
 def cosine_similarity(embedding1: np.array, embedding2: np.array):
     """
     Calcule la similarité cosinus entre deux embeddings normalisés
@@ -42,7 +41,6 @@ def similarity_matrix(vectors1: list[np.array], vectors2: list[np.array]) -> (to
     matrix = torch.mm(astorch1, astorch2.T)
     best_scores, best_indices = torch.max(matrix, dim=1)
     return best_scores, best_indices
-
 
 def resolve_device():
     device = 'cpu'
