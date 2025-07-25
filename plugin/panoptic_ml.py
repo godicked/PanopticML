@@ -70,44 +70,34 @@ class PanopticML(APlugin):
                                                           params={"model": ModelEnum.clip.value, "greyscale": False}))
             self.project.ui.update_counter.vector_type += 1
 
-    async def create_default_vector_type(self, ctx: ActionContext, model: ModelEnum, greyscale: bool, compute_vectors: bool = True):
-        vec = VectorType(source=self.name, params={"model": model.value, "greyscale": greyscale})
-        await self.project.add_vector_type(vec)
+    async def create_default_vector_type(self, ctx: ActionContext, model: ModelEnum, greyscale: bool):
+        vec = VectorType(id=-1, source=self.name, params={"model": model.value, "greyscale": greyscale})
+        res = await self.project.add_vector_type(vec)
         await self.load_vector_types()
-        if not compute_vectors:
-            return ActionResult()
-        res = await self.compute_vectors(ctx, vec, False)
-        return res
+        return ActionResult(value=res)
 
-    async def create_custom_vector_type(self, ctx: ActionContext, model: str, greyscale: bool, compute_vectors: bool = True):
-        vec = VectorType(source=self.name, params={"model": model, "greyscale": greyscale})
-        await self.project.add_vector_type(vec)
+    async def create_custom_vector_type(self, ctx: ActionContext, model: str, greyscale: bool):
+        vec = VectorType(id=-1, source=self.name, params={"model": model, "greyscale": greyscale})
+        res = await self.project.add_vector_type(vec)
         await self.load_vector_types()
-        if not compute_vectors:
-            return ActionResult()
-        res = await self.compute_vectors(ctx, vec, False)
-        return res
+        return ActionResult(value=res)
 
     def _get_vector_func_notifs(self, vec_type: VectorType):
         res = [
             NotifFunction(self._comp_vec_desc.id,
-                          ActionContext(ui_inputs={"vec_type": vec_type.dict()}),
+                          ActionContext(ui_inputs={"vec_type": vec_type}),
                           message=f"Compute vectors: {vector_name(vec_type)}")
         ]
         return res
 
-    async def compute_vectors(self, context: ActionContext, vec_type: OwnVectorType, all_vectors: bool = False):
-        types = [vec_type]
-        if all_vectors:
-            types = self.vector_types
+    async def compute_vectors(self, context: ActionContext, vec_type: OwnVectorType):
         instances = await self.project.get_instances(ids=context.instance_ids)
         for i in instances:
-            for t in types:
-                await self._compute_image_vector(i, t)
+            await self._compute_image_vector(i, vec_type)
 
         notif = Notif(type=NotifType.INFO,
                       name="ComputeVector",
-                      message=f"Successfuly started compute of vectors of types: {types}")
+                      message=f"Successfully started compute of vectors {vector_name(vec_type)}")
         return ActionResult(notifs=[notif])
 
     async def compute_image_vectors_on_import(self, instance: Instance):

@@ -14,7 +14,7 @@ def get_model_type(huggingface_model: str):
 
 
 def get_transformer(huggingface_model=None):
-    model_type = get_model_type
+    model_type = get_model_type(huggingface_model)
     if model_type in type_to_class_mapping:
         return type_to_class_mapping[model_type](huggingface_model)
     return AutoTransformer(huggingface_model)
