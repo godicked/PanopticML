@@ -65,5 +65,8 @@ def load_faiss_tree(plugin: APlugin, vec_type: VectorType) -> FaissTree | None:
     path = os.path.join(plugin.data_path, name)
     if not os.path.exists(path):
         return None
-    with open(path, 'rb') as f:
-        return pickle.load(f)
+    try:
+        with open(path, 'rb') as f:
+            return pickle.load(f)
+    except ModuleNotFoundError:
+        return None

@@ -2,6 +2,7 @@ import io
 
 import numpy as np
 import torch
+import re
 from PIL import Image
 
 from .models import VectorType
@@ -53,3 +54,19 @@ def resolve_device():
     # elif torch.backends.mps.is_available():
     #     device = 'mps'
     return device
+
+def is_image_url(url):
+    pattern = re.compile(
+        r'''(?xi)
+        \b
+        https?://                       # protocole http ou https
+        [\w.-]+(?:\.[\w.-]+)+           # domaine
+        (?:/[^\s?#]*)*                  # chemin éventuel
+        /?                              # éventuellement un / final
+        [^\s?#]*                        # éventuellement un nom de fichier
+        \.(?:jpg|jpeg|png|gif|webp|svg|bmp|tiff|ico)  # extension image
+        (?:\?[^\s#]*)?                  # paramètres après ?
+        \b
+        '''
+    )
+    return re.match(pattern, url)

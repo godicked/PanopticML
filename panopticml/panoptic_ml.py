@@ -1,6 +1,8 @@
 from typing import Dict
 
 import numpy as np
+import requests
+from PIL import Image
 from pydantic import BaseModel
 
 from panoptic.core.plugin.plugin import APlugin
@@ -16,6 +18,7 @@ from .compute.similarity import get_text_vectors
 from .compute.transformers import get_transformer, TransformerName
 from .compute_vector_task import ComputeVectorTask
 from .models import VectorType
+from .utils import is_image_url
 
 
 class PluginParams(BaseModel):
@@ -207,10 +210,15 @@ class PanopticML(APlugin):
                           message=f"No Faiss tree could be loaded for vec_type {vec_type.value}")
             return ActionResult(notifs=[notif])
 
-        try:
-            resulting_images = tree.query_texts([text], self.transformer)
-        except ValueError as e:
-            return ActionResult(notifs=[Notif(type=NotifType.ERROR, name="TextSimilarityError", message=str(e))])
+        if is_image_url(text):
+            im = Image.open(requests.get(text, stream=True).raw)
+            vec = self.transformer.to_vector(im)
+            resulting_images = tree.query([vec])
+        else:
+            try:
+                resulting_images = tree.query_texts([text], self.transformer)
+            except ValueError as e:
+                return ActionResult(notifs=[Notif(type=NotifType.ERROR, name="TextSimilarityError", message=str(e))])
 
 
         # filter out images if they are not in the current context
