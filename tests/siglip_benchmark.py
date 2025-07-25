@@ -53,7 +53,7 @@ class AutoTransformer(Transformer):
 
 class SIGLIPTransformer(AutoTransformer):
     def __init__(self):
-        model_name = "google/siglip2-so400m-patch16-naflex"
+        model_name = "openai/clip-vit-base-patch32"
         super().__init__(model_name)
         self.name = "SIGLIP"
 
@@ -80,6 +80,6 @@ def generate_vectors(transformer: Transformer, images=None):
 
 
 if __name__ == "__main__":
-    folder = sys.argv[1]
+    folder = r"D:\CorpusImage\documerica\extracted_images"
     siglip = SIGLIPTransformer()
     vectors, images = generate_vectors(siglip, get_images(Path(folder)))
