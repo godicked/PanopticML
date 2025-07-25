@@ -28,7 +28,7 @@ class FaissTree:
 
     def query_texts(self, texts: list[str], transformer):
         text_vectors = get_text_vectors(texts, transformer)
-        return self.query(text_vectors[0])
+        return self.query(text_vectors)
 
 
 def gen_tree_file_name(vec_type: VectorType):
