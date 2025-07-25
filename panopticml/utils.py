@@ -49,6 +49,7 @@ def resolve_device():
     device = 'cpu'
     if torch.cuda.is_available():
         device = 'cuda'
-    elif torch.backends.mps.is_available():
-        device = 'mps'
+    # TODO: when silicon bugs are working again put it back
+    # elif torch.backends.mps.is_available():
+    #     device = 'mps'
     return device

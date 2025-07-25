@@ -3,9 +3,11 @@ import sys
 from pathlib import Path
 
 import torch
+import torchvision.io
 from PIL import Image
 from tqdm import tqdm
 import numpy as np
+
 
 
 class Transformer(object):
@@ -62,9 +64,12 @@ class SIGLIPTransformer(AutoTransformer):
         return True
 
 
-def get_images(folder):
-    return [f for f in folder.iterdir() if
+def get_images(folder, nb=None):
+    images = [f for f in folder.iterdir() if
             f.suffix in ['.jpg', '.jpeg', '.png', '.gif'] and f.name != 'cropped_chat.png']
+    if nb is not None:
+        images = images[:nb]
+    return images
 
 
 def generate_vectors(transformer: Transformer, images=None):
@@ -72,14 +77,38 @@ def generate_vectors(transformer: Transformer, images=None):
     images = get_images() if not images else images
 
     for img_path in tqdm(images):
-        with open(img_path, mode='rb') as f:
-            image = Image.open(io.BytesIO(f.read()))
-            image = image.convert('RGB')
+        image = torchvision.io.read_image(img_path)
         vectors.append(transformer.to_vector(image))
     return vectors, images
 
+def generate_vectors_batch(transformer: Transformer, images=None, batch_size=16):
+    image_paths = []
+    vectors = []
+
+    for i in tqdm(range(0, len(images), batch_size), desc="Processing batches"):
+        batch_paths = images[i:i + batch_size]
+        batch_images = []
+
+        # Charger le batch
+        for img_path in batch_paths:
+            batch_images.append(torchvision.io.read_image(img_path))
+
+        # Traitement batch
+        inputs = transformer.processor(images=batch_images, return_tensors="pt", padding=True)
+        inputs = {k: v.to(transformer.device) for k, v in inputs.items()}
+
+        with torch.no_grad():
+            features = transformer.model.get_image_features(**inputs)
+            features = features / features.norm(dim=-1, keepdim=True)
+
+        batch_vectors = features.cpu().numpy()
+        vectors.extend(batch_vectors)
+        image_paths.extend([str(p) for p in batch_paths])
+
+    return vectors, image_paths
 
 if __name__ == "__main__":
     folder = r"D:\CorpusImage\documerica\extracted_images"
     siglip = SIGLIPTransformer()
-    vectors, images = generate_vectors(siglip, get_images(Path(folder)))
+    # vectors, images = generate_vectors(siglip, get_images(Path(folder), 200))
+    vectors, images = generate_vectors_batch(siglip, get_images(Path(folder), 200), 16)

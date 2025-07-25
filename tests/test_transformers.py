@@ -6,10 +6,10 @@ import faiss
 import pytest
 import numpy as np
 
-from ..plugin.compute.faiss_tree import FaissTree
-from ..plugin.compute.transformers import get_transformer, TransformerName, Transformer
-from ..plugin.models import VectorType
-from ..plugin.utils import preprocess_image, cosine_similarity
+from ..panopticml.compute.faiss_tree import FaissTree
+from ..panopticml.compute.transformers import get_transformer, TransformerName, Transformer
+from ..panopticml.models import VectorType
+from ..panopticml.utils import preprocess_image, cosine_similarity
 
 transformers_to_test = [transformer for transformer in TransformerName if transformer != TransformerName.auto]
 
