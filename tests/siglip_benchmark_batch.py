@@ -59,7 +59,7 @@ class AutoTransformer(Transformer):
 
 class SIGLIPTransformer(AutoTransformer):
     def __init__(self):
-        model_name = "openai/clip-vit-base-patch32"
+        model_name = "google/siglip2-so400m-patch16-naflex"
         super().__init__(model_name)
         self.name = "SIGLIP"
 
